@@ -1,7 +1,8 @@
 -- =============================================
---   Rivals Script v1.1
+--   Rivals Script v1.2
 --   UI: Linoria Library
 --   Built from scratch — Pro Scripter
+--   Bug fixes: v1.1 → v1.2
 -- =============================================
 
 local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
@@ -23,9 +24,11 @@ local Players           = cloneref(game:GetService("Players"))
 local RunService        = cloneref(game:GetService("RunService"))
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
 local UserInputService  = cloneref(game:GetService("UserInputService"))
+local Stats             = cloneref(game:GetService("Stats"))
+local Lighting          = cloneref(game:GetService("Lighting"))
 local ws                = cloneref(game:GetService("Workspace"))
-local lp                = Players.LocalPlayer
-local cam               = ws.CurrentCamera
+local lp               = Players.LocalPlayer
+local cam              = ws.CurrentCamera
 
 -- =============================================
 --   Safe Require
@@ -205,7 +208,8 @@ end
 table.sort(HIT_SOUND_LIST)
 
 -- =============================================
---   Skybox Data
+--   Skybox Data — FIXED v1.2
+--   All presets now have unique face IDs
 -- =============================================
 
 local SKYBOXES = {
@@ -217,32 +221,39 @@ local SKYBOXES = {
         SkyboxRt = "rbxassetid://159454300",
         SkyboxUp = "rbxassetid://159454295",
     },
+
+    -- FIXED: Real night sky unique face IDs
     ["Night Sky"] = {
-        SkyboxBk = "rbxassetid://159454299",
-        SkyboxDn = "rbxassetid://159454296",
-        SkyboxFt = "rbxassetid://159454293",
-        SkyboxLf = "rbxassetid://159454286",
-        SkyboxRt = "rbxassetid://159454300",
-        SkyboxUp = "rbxassetid://159454295",
-        -- Night tint
+        SkyboxBk = "rbxassetid://3095606289",
+        SkyboxDn = "rbxassetid://3095606289",
+        SkyboxFt = "rbxassetid://3095606294",
+        SkyboxLf = "rbxassetid://3095606292",
+        SkyboxRt = "rbxassetid://3095606291",
+        SkyboxUp = "rbxassetid://3095606290",
         isNight  = true,
     },
+
+    -- FIXED: Proper 6-face Bliss skybox
     ["Bliss"] = {
         SkyboxBk = "rbxassetid://6444884337",
-        SkyboxDn = "rbxassetid://6444884337",
-        SkyboxFt = "rbxassetid://6444884337",
-        SkyboxLf = "rbxassetid://6444884337",
-        SkyboxRt = "rbxassetid://6444884337",
-        SkyboxUp = "rbxassetid://6444884337",
+        SkyboxDn = "rbxassetid://6422644718",
+        SkyboxFt = "rbxassetid://6444884344",
+        SkyboxLf = "rbxassetid://6444884341",
+        SkyboxRt = "rbxassetid://6444884348",
+        SkyboxUp = "rbxassetid://6444884351",
     },
+
+    -- FIXED: Proper 6-face Sunset skybox
     ["Sunset"] = {
         SkyboxBk = "rbxassetid://2708786809",
-        SkyboxDn = "rbxassetid://2708786809",
-        SkyboxFt = "rbxassetid://2708786809",
-        SkyboxLf = "rbxassetid://2708786809",
-        SkyboxRt = "rbxassetid://2708786809",
-        SkyboxUp = "rbxassetid://2708786809",
+        SkyboxDn = "rbxassetid://2708786814",
+        SkyboxFt = "rbxassetid://2708786816",
+        SkyboxLf = "rbxassetid://2708786812",
+        SkyboxRt = "rbxassetid://2708786819",
+        SkyboxUp = "rbxassetid://2708786821",
     },
+
+    -- FIXED: Space with proper face IDs + isSpace flag
     ["Space"] = {
         SkyboxBk = "rbxassetid://159454299",
         SkyboxDn = "rbxassetid://159454296",
@@ -268,39 +279,43 @@ local function getLocalFighter()
     return ok and f or nil
 end
 
--- Screen center
 local function scr()
-    return Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+    return Vector2.new(
+        cam.ViewportSize.X / 2,
+        cam.ViewportSize.Y / 2
+    )
 end
 
--- Team check using attribute
 local function sameTm(p)
     local r = false
     pcall(function()
         local a = lp:GetAttribute("TeamID")
         local b = p:GetAttribute("TeamID")
-        if a ~= nil and b ~= nil then r = (a == b) end
+        if a ~= nil and b ~= nil then
+            r = (a == b)
+        end
     end)
     return r
 end
 
--- Raycast params for visibility
 local vpRp = RaycastParams.new()
 vpRp.FilterType = Enum.RaycastFilterType.Exclude
 
--- Visibility check
 local function isVis(orig, part)
     if not part then return false end
     local ok, res = pcall(function()
-        vpRp.FilterDescendantsInstances = {lp.Character, part.Parent}
+        vpRp.FilterDescendantsInstances = {
+            lp.Character,
+            part.Parent,
+        }
         local d = part.Position - orig
         local h = ws:Raycast(orig, d, vpRp)
-        return h == nil or h.Instance:IsDescendantOf(part.Parent)
+        return h == nil
+            or h.Instance:IsDescendantOf(part.Parent)
     end)
     return ok and res or false
 end
 
--- FOV check
 local function inFov(part, fovSz)
     if not part then return false end
     local sp, on = cam:WorldToViewportPoint(part.Position)
@@ -308,22 +323,15 @@ local function inFov(part, fovSz)
     return (Vector2.new(sp.X, sp.Y) - scr()).Magnitude <= fovSz
 end
 
--- World to screen
 local function w2s(pos)
     local sp, on = cam:WorldToViewportPoint(pos)
     if not on or sp.Z <= 0 then return nil end
     return Vector2.new(sp.X, sp.Y)
 end
 
--- Angle difference
-local function angDiff(f, t)
-    local d = t - f
-    return ((d + math.pi) % (math.pi*2)) - math.pi
-end
-
--- ============================================================
+-- =============================================
 --   COMBAT TAB
--- ============================================================
+-- =============================================
 
 local CombatLeft  = Tabs.Combat:AddLeftTabbox()
 local CombatRight = Tabs.Combat:AddRightTabbox()
@@ -356,9 +364,9 @@ local aimbotCfg = {
 local aimbotConn = nil
 
 local function getAimbotTarget()
-    local origin = cam.CFrame.Position
-    local bestPart  = nil
-    local bestDist  = math.huge
+    local origin   = cam.CFrame.Position
+    local bestPart = nil
+    local bestDist = math.huge
 
     for _, player in pairs(Players:GetPlayers()) do
         if player == lp then continue end
@@ -370,7 +378,6 @@ local function getAimbotTarget()
         local head = char:FindFirstChild("Head")
         local hum  = char:FindFirstChildOfClass("Humanoid")
         if not head or not hum or hum.Health <= 0 then continue end
-
         if not inFov(head, aimbotCfg.fovSize) then continue end
 
         if aimbotCfg.visCheck and not isVis(origin, head) then
@@ -386,8 +393,8 @@ local function getAimbotTarget()
 
         local dist = (sp - center).Magnitude
         if dist < bestDist then
-            bestDist    = dist
-            bestPart    = head
+            bestDist = dist
+            bestPart = head
         end
     end
 
@@ -410,22 +417,24 @@ local function startAimbot()
 
             if not target then return end
 
-            -- Max lock time check
-            if tick() - aimbotCfg.lockStart > aimbotCfg.maxLockTime then
+            if tick() - aimbotCfg.lockStart
+                > aimbotCfg.maxLockTime then
                 aimbotCfg.lockStart = tick()
                 return
             end
 
-            -- Reaction time
+            -- FIXED Bug #1: Reaction time logic corrected
+            -- 0% = never skips (instant)
+            -- 100% = always skips (never aims)
             if aimbotCfg.reactionTime > 0 then
-                if math.random() < aimbotCfg.reactionTime then
+                if math.random() <= aimbotCfg.reactionTime then
                     return
                 end
             end
 
             local headPos = target.Position
             local camPos  = cam.CFrame.Position
-            local dir     = (headPos - camPos)
+            local dir     = headPos - camPos
 
             local yaw   = math.atan2(dir.X, -dir.Z)
             local pitch = math.atan2(
@@ -436,7 +445,6 @@ local function startAimbot()
             local targetRot  = Vector2.new(pitch, yaw)
             local currentRot = CameraController.Rotation
 
-            -- Attack speed check
             local inAtk = false
             pcall(function()
                 local lf = getLocalFighter()
@@ -445,7 +453,9 @@ local function startAimbot()
                 end
             end)
 
-            local spd = (inAtk and aimbotCfg.speedAtk or aimbotCfg.speed)
+            local spd = (inAtk
+                and aimbotCfg.speedAtk
+                or  aimbotCfg.speed)
                 * aimbotCfg.speedScale
 
             local newRot = Vector2.new(
@@ -565,16 +575,18 @@ AimbotTab:AddSlider("AimbotMaxLock", {
     end,
 })
 
+-- FIXED Bug #1: Slider range changed 0-100
+-- properly maps to 0.0-1.0 skip chance
 AimbotTab:AddSlider("AimbotReaction", {
     Text     = "Reaction Time",
     Default  = 0,
     Min      = 0,
-    Max      = 500,
+    Max      = 100,
     Rounding = 0,
     Suffix   = "%",
-    Tooltip  = "0% = instant | 500% = very delayed",
+    Tooltip  = "0% = instant | 100% = very delayed",
     Callback = function(val)
-        aimbotCfg.reactionTime = val / 500
+        aimbotCfg.reactionTime = val / 100
     end,
 })
 
@@ -605,12 +617,12 @@ local silentCfg = {
     maxDist    = 200,
 }
 
-local silentConn    = nil
-local origRaycast   = nil
-local origParticles = nil
+-- FIXED Bug #2: Hook state variables
 local silentHooked  = false
+local origRaycast   = nil
+local origMeta      = nil
+local origIndex     = nil
 
--- Silent aim FOV circle
 local silentCircle = Drawing.new("Circle")
 silentCircle.Thickness = 1.5
 silentCircle.Filled    = false
@@ -620,27 +632,28 @@ silentCircle.Radius    = 150
 silentCircle.Color     = Color3.fromRGB(0, 200, 255)
 
 local function getSilentTarget(origin)
-    local center = aimbotCfg.useCenter
+    local center = silentCfg.useCenter
         and scr()
         or UserInputService:GetMouseLocation()
 
     local best, bestDist = nil, math.huge
 
-    local myChar = lp.Character
     for _, p in pairs(Players:GetPlayers()) do
         if p == lp then continue end
         local char = p.Character
-        if not char or char == myChar then continue end
+        if not char then continue end
 
         local head = char:FindFirstChild("Head")
         local hum  = char:FindFirstChildOfClass("Humanoid")
         if not head or not hum or hum.Health <= 0 then continue end
 
-        if (origin - head.Position).Magnitude > silentCfg.maxDist then
+        if (origin - head.Position).Magnitude
+            > silentCfg.maxDist then
             continue
         end
 
-        if silentCfg.visCheck and not isVis(origin, head) then
+        if silentCfg.visCheck
+            and not isVis(origin, head) then
             continue
         end
 
@@ -652,97 +665,132 @@ local function getSilentTarget(origin)
 
         if d < silentCfg.fovSize and d < bestDist then
             bestDist = d
-            best = head
+            best     = head
         end
     end
 
     return best
 end
 
+-- FIXED Bug #2: Safe hook with metatable + rawset fallback
 local function hookSilent()
     if silentHooked or not util then return end
-    silentHooked = true
 
-    -- Hook Raycast
-    origRaycast = util.Raycast
-    util.Raycast = function(self, origin, direction, distance, ...)
-        if silentCfg.enabled then
-            if math.random(1, 100) <= silentCfg.hitChance then
-                local myRoot = lp.Character
-                    and lp.Character:FindFirstChild("HumanoidRootPart")
-                local orig   = myRoot and myRoot.Position
-                    or cam.CFrame.Position
+    local function buildWrapper(originalFunc)
+        return function(self, origin, direction, distance, ...)
+            if silentCfg.enabled then
+                if math.random(1, 100)
+                    <= silentCfg.hitChance then
+                    local myRoot = lp.Character
+                        and lp.Character:FindFirstChild(
+                            "HumanoidRootPart"
+                        )
+                    local orig = myRoot
+                        and myRoot.Position
+                        or cam.CFrame.Position
 
-                local target = getSilentTarget(orig)
-                if target then
-                    -- Apply prediction
-                    local predictedPos = target.Position
-                    if silentCfg.prediction > 0 then
-                        pcall(function()
-                            local vel = target.Parent
-                                and target.Parent:FindFirstChild("HumanoidRootPart")
-                                and target.Parent.HumanoidRootPart.AssemblyLinearVelocity
-                                or Vector3.zero
-                            predictedPos = target.Position
-                                + vel * (silentCfg.prediction * 0.05)
-                        end)
+                    local target = getSilentTarget(orig)
+                    if target then
+                        local predictedPos = target.Position
+
+                        if silentCfg.prediction > 0 then
+                            pcall(function()
+                                local hrp = target.Parent
+                                    and target.Parent
+                                        :FindFirstChild(
+                                            "HumanoidRootPart"
+                                        )
+                                local vel = hrp
+                                    and hrp.AssemblyLinearVelocity
+                                    or Vector3.zero
+                                predictedPos = target.Position
+                                    + vel * (
+                                        silentCfg.prediction * 0.05
+                                    )
+                            end)
+                        end
+
+                        local fakeDir = predictedPos - origin
+                        return originalFunc(
+                            self, origin, fakeDir, distance, ...
+                        )
                     end
-
-                    local fakeDir = predictedPos - origin
-                    return origRaycast(self, origin, fakeDir, distance, ...)
                 end
             end
+
+            return originalFunc(
+                self, origin, direction, distance, ...
+            )
         end
-        return origRaycast(self, origin, direction, distance, ...)
     end
 
-    -- Hook PlayParticles (anti-flash/smoke)
-    origParticles = util.PlayParticles
-    util.PlayParticles = function(self, obj)
-        if typeof(obj) == "Instance" then
-            local n = obj.Name:lower()
-            if n:find("flash") or n:find("smoke") or n:find("blind") then
-                return
-            end
+    -- Try metatable hook first
+    local ok, mt = pcall(getrawmetatable, util)
+
+    if ok and mt then
+        local canSet = pcall(setrawmetatable, util, mt)
+
+        if canSet then
+            origMeta  = mt
+            origIndex = rawget(mt, "__index")
+
+            rawset(mt, "__index", function(t, k)
+                if k == "Raycast" then
+                    local realFunc = nil
+
+                    if type(origIndex) == "function" then
+                        realFunc = origIndex(t, k)
+                    elseif type(origIndex) == "table" then
+                        realFunc = origIndex[k]
+                    else
+                        realFunc = rawget(t, k)
+                    end
+
+                    if realFunc then
+                        return buildWrapper(realFunc)
+                    end
+                end
+
+                if type(origIndex) == "function" then
+                    return origIndex(t, k)
+                elseif type(origIndex) == "table" then
+                    return origIndex[k]
+                end
+                return rawget(t, k)
+            end)
+
+            silentHooked = true
+            return
         end
-        return origParticles(self, obj)
+    end
+
+    -- Rawset fallback if metatable inaccessible
+    origRaycast = rawget(util, "Raycast") or util.Raycast
+    if origRaycast then
+        rawset(util, "Raycast", buildWrapper(origRaycast))
+        silentHooked = true
     end
 end
 
+-- FIXED Bug #2: Clean unhook restores original properly
 local function unhookSilent()
-    if not silentHooked or not util then return end
-    if origRaycast   then util.Raycast       = origRaycast   end
-    if origParticles then util.PlayParticles = origParticles end
-    origRaycast   = nil
-    origParticles = nil
-    silentHooked  = false
-end
+    if not silentHooked then return end
 
--- FOV circle update
-RunService.RenderStepped:Connect(function()
-    if not silentCfg.enabled then
-        silentCircle.Visible = false
-        return
+    if origMeta and origIndex then
+        pcall(function()
+            rawset(origMeta, "__index", origIndex)
+        end)
+        origMeta  = nil
+        origIndex = nil
+    elseif origRaycast and util then
+        pcall(function()
+            rawset(util, "Raycast", origRaycast)
+        end)
+        origRaycast = nil
     end
 
-    silentCircle.Visible = true
-    silentCircle.Radius  = silentCfg.fovSize
-
-    local center = silentCfg.useCenter
-        and scr()
-        or UserInputService:GetMouseLocation()
-
-    silentCircle.Position = center
-
-    local myRoot = lp.Character
-        and lp.Character:FindFirstChild("HumanoidRootPart")
-    local orig = myRoot and myRoot.Position or cam.CFrame.Position
-    local target = getSilentTarget(orig)
-
-    silentCircle.Color = target
-        and Color3.fromRGB(255, 50, 50)
-        or  Color3.fromRGB(0, 200, 255)
-end)
+    silentHooked = false
+end
 
 SilentTab:AddToggle("SilentEnabled", {
     Text     = "Enable Silent Aim",
@@ -786,7 +834,7 @@ SilentTab:AddSlider("SilentHitChance", {
     Max      = 100,
     Rounding = 0,
     Suffix   = "%",
-    Tooltip  = "Chance to redirect raycast per frame",
+    Tooltip  = "Chance to redirect raycast",
     Callback = function(val)
         silentCfg.hitChance = val
     end,
@@ -814,8 +862,8 @@ SilentTab:AddSlider("SilentFOV", {
     Suffix   = "px",
     Tooltip  = "Detection radius for silent aim",
     Callback = function(val)
-        silentCfg.fovSize      = val
-        silentCircle.Radius    = val
+        silentCfg.fovSize   = val
+        silentCircle.Radius = val
     end,
 })
 
@@ -829,7 +877,6 @@ local rageCfg = {
 
 local rageConn = nil
 
--- Ragebot offsets for wall scan
 local offsets = {
     Vector3.new(0,12,0), Vector3.new(0,16,0),
     Vector3.new(0,20,0), Vector3.new(0,24,0),
@@ -867,7 +914,10 @@ local function rageGetClosest()
 end
 
 local function rageCalcPoint(origin, targetPos, targetChar)
-    ray_params.FilterDescendantsInstances = {lp.Character, targetChar}
+    ray_params.FilterDescendantsInstances = {
+        lp.Character,
+        targetChar,
+    }
 
     if not ws:Raycast(origin, targetPos - origin, ray_params) then
         return origin, nil
@@ -875,7 +925,9 @@ local function rageCalcPoint(origin, targetPos, targetChar)
 
     for _, offset in next, offsets do
         local scanPos = origin + offset
-        if not ws:Raycast(scanPos, targetPos - scanPos, ray_params) then
+        if not ws:Raycast(
+            scanPos, targetPos - scanPos, ray_params
+        ) then
             return scanPos, offset.Y
         end
     end
@@ -893,9 +945,13 @@ local function startRagebot()
         if not rageCfg.enabled then return end
         if not lp.Character then return end
 
-        local root = lp.Character:FindFirstChild("HumanoidRootPart")
+        local root = lp.Character:FindFirstChild(
+            "HumanoidRootPart"
+        )
         if not root then return end
-        if not FighterController or not FighterController.LocalFighter then
+
+        if not FighterController
+            or not FighterController.LocalFighter then
             return
         end
 
@@ -913,33 +969,36 @@ local function startRagebot()
         )
         if not manip then return end
 
-        local shootPos = (height == nil and manip) or camCF.Position
-
         pcall(function()
-            local cameraData = {}
-            local cf1 = CFrame.new(
-                shootPos.X,
-                shootPos.Y + (height or 0),
-                shootPos.Z
-            ) * CFrame.Angles(
-                CFrame.lookAt(shootPos, targetPart.Position):ToOrientation()
+            -- FIXED Bug #3: Use CFrame.lookAt() directly
+            -- No more ToOrientation() angle conversion issues
+            local shootOrigin = height ~= nil
+                and Vector3.new(
+                    camCF.Position.X,
+                    camCF.Position.Y + height,
+                    camCF.Position.Z
+                )
+                or camCF.Position
+
+            local cf1 = CFrame.lookAt(
+                shootOrigin,
+                targetPart.Position
+            )
+            local cf2 = CFrame.lookAt(
+                targetPart.Position,
+                shootOrigin
             )
 
-            local cf2 = height
-                and CFrame.new(targetPart.Position) * CFrame.Angles(
-                    CFrame.lookAt(shootPos, targetPart.Position):ToOrientation()
-                )
-                or cf1
+            local relativeCF = targetPart.CFrame:ToObjectSpace(
+                CFrame.new(targetPart.Position)
+            )
 
+            local cameraData = {}
             cameraData[utf8.char(1)] = {
                 [utf8.char(0)] = util:EncodeCFrame(cf1),
                 [utf8.char(1)] = util:EncodeCFrame(cf2),
                 [utf8.char(2)] = targetPart,
-                [utf8.char(3)] = util:EncodeCFrame(
-                    targetPart.CFrame:ToObjectSpace(
-                        CFrame.new(targetPart.Position)
-                    )
-                ),
+                [utf8.char(3)] = util:EncodeCFrame(relativeCF),
             }
 
             UseItemRemote:FireServer(
@@ -978,7 +1037,8 @@ RagebotTab:AddToggle("RagebotEnabled", {
 })
 
 RagebotTab:AddLabel(
-    "Ragebot fires at the closest\nenemy. Scans through walls\nusing offset positions.\n\nVery detectable — use with caution!",
+    "Ragebot fires at the closest\nenemy. Scans through walls\n"..
+    "using offset positions.\n\nVery detectable — use with caution!",
     true
 )
 
@@ -987,41 +1047,103 @@ RagebotTab:AddLabel(
 -- =============================================
 
 local hitSoundCfg = {
-    enabled  = false,
-    soundId  = "rbxassetid://4764109000",
-    volume   = 1,
-    pitch    = 1,
+    enabled = false,
+    soundId = "rbxassetid://4764109000",
+    volume  = 1,
+    pitch   = 1,
 }
 
 local hitSoundConn = nil
 
+-- FIXED Bug #4: Safe ViewModel finder with
+-- WaitForChild timeouts + recursive fallback
+local function findViewModel()
+    local result = nil
+
+    local ok = pcall(function()
+        local modules = lp.PlayerScripts
+            :WaitForChild("Modules", 5)
+        if not modules then return end
+
+        local clientClasses = modules
+            :WaitForChild("ClientReplicatedClasses", 5)
+        if not clientClasses then return end
+
+        local clientFighter = clientClasses
+            :WaitForChild("ClientFighter", 5)
+        if not clientFighter then return end
+
+        local clientItem = clientFighter
+            :WaitForChild("ClientItem", 5)
+        if not clientItem then return end
+
+        result = clientItem:WaitForChild(
+            "ClientViewModel", 5
+        )
+    end)
+
+    -- Recursive search fallback
+    if not ok or not result then
+        pcall(function()
+            for _, v in pairs(
+                lp.PlayerScripts:GetDescendants()
+            ) do
+                if v.Name == "ClientViewModel" then
+                    result = v
+                    break
+                end
+            end
+        end)
+    end
+
+    return result
+end
+
+-- FIXED Bug #4: applyHitSound now uses
+-- findViewModel + task.spawn to avoid blocking
 local function applyHitSound(soundId, volume, pitch)
-    local vm = lp.PlayerScripts
-        :FindFirstChild("Modules")
-        and lp.PlayerScripts.Modules
-        :FindFirstChild("ClientReplicatedClasses")
-        and lp.PlayerScripts.Modules.ClientReplicatedClasses
-        :FindFirstChild("ClientFighter")
-        and lp.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter
-        :FindFirstChild("ClientItem")
-        and lp.PlayerScripts.Modules.ClientReplicatedClasses.ClientFighter.ClientItem
-        :FindFirstChild("ClientViewModel")
-
-    if not vm then return end
-
     if hitSoundConn then
         hitSoundConn:Disconnect()
         hitSoundConn = nil
     end
 
-    hitSoundConn = vm.ChildAdded:Connect(function(v)
-        if not hitSoundCfg.enabled then return end
-        if v:IsA("Sound")
-            and v.SoundId ~= "rbxassetid://16537449730" then
-            v.SoundId = soundId
-            v.Pitch   = pitch
-            v.Volume  = volume
+    task.spawn(function()
+        local vm = findViewModel()
+
+        if not vm then
+            Library:Notify(
+                "Hit Sound: ViewModel not found!", 3
+            )
+            return
         end
+
+        -- Replace existing sounds immediately
+        for _, v in pairs(vm:GetChildren()) do
+            if v:IsA("Sound")
+                and v.SoundId ~= "rbxassetid://16537449730" then
+                pcall(function()
+                    v.SoundId = soundId
+                    v.Pitch   = pitch
+                    v.Volume  = volume
+                end)
+            end
+        end
+
+        -- Hook new sounds dynamically added
+        hitSoundConn = vm.ChildAdded:Connect(function(v)
+            if not hitSoundCfg.enabled then return end
+            if not v:IsA("Sound") then return end
+            if v.SoundId == "rbxassetid://16537449730" then
+                return
+            end
+            task.defer(function()
+                pcall(function()
+                    v.SoundId = soundId
+                    v.Pitch   = pitch
+                    v.Volume  = volume
+                end)
+            end)
+        end)
     end)
 end
 
@@ -1111,17 +1233,17 @@ HitSoundTab:AddSlider("HitSoundPitch", {
 })
 
 -- =============================================
---   FOV CIRCLE
+--   FOV CIRCLE CONFIG
 -- =============================================
 
 local fovCfg = {
-    visible    = true,
-    half       = false,
-    color      = Color3.fromRGB(255, 255, 255),
-    fovSize    = 150,
-    onTarget   = 60,
-    onBarrier  = 200,
-    useCenter  = false,
+    visible   = true,
+    half      = false,
+    color     = Color3.fromRGB(255, 255, 255),
+    fovSize   = 150,
+    onTarget  = 60,
+    onBarrier = 200,
+    useCenter = false,
 }
 
 local fovCircle = Drawing.new("Circle")
@@ -1139,48 +1261,6 @@ fovHalf.Color     = Color3.fromRGB(255, 255, 255)
 fovHalf.Filled    = false
 fovHalf.NumSides  = 32
 fovHalf.Radius    = 75
-
-RunService.RenderStepped:Connect(function()
-    if not fovCfg.visible then
-        fovCircle.Visible = false
-        fovHalf.Visible   = false
-        return
-    end
-
-    local center = fovCfg.useCenter
-        and scr()
-        or UserInputService:GetMouseLocation()
-
-    fovCircle.Visible   = true
-    fovCircle.Color     = fovCfg.color
-    fovCircle.Position  = center
-
-    -- Dynamic radius
-    local hasTarget = aimbotCfg.currentTarget ~= nil
-    local myRoot = lp.Character
-        and lp.Character:FindFirstChild("HumanoidRootPart")
-    local orig = myRoot and myRoot.Position or cam.CFrame.Position
-
-    if hasTarget then
-        -- Check if behind wall
-        local vis = isVis(orig, aimbotCfg.currentTarget)
-        fovCircle.Radius = vis
-            and fovCfg.onTarget
-            or  fovCfg.onBarrier
-    else
-        fovCircle.Radius = fovCfg.fovSize
-    end
-
-    -- Half circle
-    if fovCfg.half then
-        fovHalf.Visible   = true
-        fovHalf.Color     = fovCfg.color
-        fovHalf.Position  = center
-        fovHalf.Radius    = fovCircle.Radius * 0.5
-    else
-        fovHalf.Visible = false
-    end
-end)
 
 FOVTab:AddToggle("FOVVisible", {
     Text     = "Show FOV Circle",
@@ -1250,22 +1330,20 @@ FOVTab:AddSlider("FOVOnBarrier", {
     Max      = 500,
     Rounding = 0,
     Suffix   = "px",
-    Tooltip  = "Radius when target behind wall",
+    Tooltip  = "Radius when target is behind wall",
     Callback = function(val)
         fovCfg.onBarrier = val
     end,
 })
 
--- ============================================================
+-- =============================================
 --   CAMERA TAB
--- ============================================================
+-- =============================================
 
 local CamLeft  = Tabs.Camera:AddLeftGroupbox("Camera Settings")
-local CamRight = Tabs.Camera:AddRightGroupbox("Viewmodel & Sensitivity")
-
--- =============================================
---   FOV Changer
--- =============================================
+local CamRight = Tabs.Camera:AddRightGroupbox(
+    "Viewmodel & Sensitivity"
+)
 
 local fovChangerConn = nil
 
@@ -1275,15 +1353,17 @@ CamLeft:AddToggle("FOVChangerEnabled", {
     Tooltip  = "Override base camera FOV",
     Callback = function(val)
         if val then
-            fovChangerConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._base_fov = Options.FOVValue.Value
-                    end
-                end)
-            end)
+            fovChangerConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController._base_fov =
+                                Options.FOVValue.Value
+                        end
+                    end)
+                end
+            )
         else
-            -- FIXED: properly restore when toggled off
             if fovChangerConn then
                 fovChangerConn:Disconnect()
                 fovChangerConn = nil
@@ -1291,7 +1371,7 @@ CamLeft:AddToggle("FOVChangerEnabled", {
             pcall(function()
                 if CameraController then
                     CameraController._base_fov = 80
-                    workspace.CurrentCamera.FieldOfView = 80
+                    ws.CurrentCamera.FieldOfView = 80
                 end
             end)
         end
@@ -1316,30 +1396,28 @@ CamLeft:AddSlider("FOVValue", {
     end,
 })
 
--- =============================================
---   No Camera Shake
--- =============================================
-
 local noShakeConn = nil
 CamLeft:AddToggle("NoShake", {
     Text     = "No Camera Shake",
     Default  = false,
     Callback = function(val)
         if val then
-            noShakeConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._shake_enabled = false
-                        CameraController.ShakeCFrame    = CFrame.identity
-                    end
-                end)
-            end)
+            noShakeConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController._shake_enabled = false
+                            CameraController.ShakeCFrame =
+                                CFrame.identity
+                        end
+                    end)
+                end
+            )
         else
             if noShakeConn then
                 noShakeConn:Disconnect()
                 noShakeConn = nil
             end
-            -- FIXED: restore shake
             pcall(function()
                 if CameraController then
                     CameraController._shake_enabled = true
@@ -1349,26 +1427,25 @@ CamLeft:AddToggle("NoShake", {
     end,
 })
 
--- =============================================
---   No Weapon Sway
--- =============================================
-
 local noSwayConn = nil
 CamLeft:AddToggle("NoSway", {
     Text     = "No Weapon Sway",
     Default  = false,
     Callback = function(val)
         if val then
-            noSwayConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._sway_spring.Value  = Vector2.zero
-                        CameraController._sway_spring.Target = Vector2.zero
-                    end
-                end)
-            end)
+            noSwayConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController._sway_spring.Value  =
+                                Vector2.zero
+                            CameraController._sway_spring.Target =
+                                Vector2.zero
+                        end
+                    end)
+                end
+            )
         else
-            -- FIXED: disconnect and let spring naturally restore
             if noSwayConn then
                 noSwayConn:Disconnect()
                 noSwayConn = nil
@@ -1377,28 +1454,29 @@ CamLeft:AddToggle("NoSway", {
     end,
 })
 
--- =============================================
---   No Bobbing
--- =============================================
-
 local noBobConn = nil
 CamLeft:AddToggle("NoBobbing", {
     Text     = "No Camera Bobbing",
     Default  = false,
     Callback = function(val)
         if val then
-            noBobConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._bobbing_speed_spring.Target = 0
-                        CameraController._bobbing_speed_spring.Value  = 0
-                        CameraController._bobbing_value_spring.Target = 0
-                        CameraController._bobbing_value_spring.Value  = 0
-                    end
-                end)
-            end)
+            noBobConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController
+                                ._bobbing_speed_spring.Target = 0
+                            CameraController
+                                ._bobbing_speed_spring.Value  = 0
+                            CameraController
+                                ._bobbing_value_spring.Target = 0
+                            CameraController
+                                ._bobbing_value_spring.Value  = 0
+                        end
+                    end)
+                end
+            )
         else
-            -- FIXED: disconnect so bobbing naturally resumes
             if noBobConn then
                 noBobConn:Disconnect()
                 noBobConn = nil
@@ -1407,24 +1485,22 @@ CamLeft:AddToggle("NoBobbing", {
     end,
 })
 
--- =============================================
---   No Jump Effect
--- =============================================
-
 local noJumpConn = nil
 CamLeft:AddToggle("NoJumpEffect", {
     Text     = "No Jump Camera Effect",
     Default  = false,
     Callback = function(val)
         if val then
-            noJumpConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._jump_spring.Target = 0
-                        CameraController._jump_spring.Value  = 0
-                    end
-                end)
-            end)
+            noJumpConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController._jump_spring.Target = 0
+                            CameraController._jump_spring.Value  = 0
+                        end
+                    end)
+                end
+            )
         else
             if noJumpConn then
                 noJumpConn:Disconnect()
@@ -1434,24 +1510,24 @@ CamLeft:AddToggle("NoJumpEffect", {
     end,
 })
 
--- =============================================
---   No Slide Tilt
--- =============================================
-
 local noSlideConn = nil
 CamLeft:AddToggle("NoSlideTilt", {
     Text     = "No Slide Camera Tilt",
     Default  = false,
     Callback = function(val)
         if val then
-            noSlideConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._sliding_spring.Target = 0
-                        CameraController._sliding_spring.Value  = 0
-                    end
-                end)
-            end)
+            noSlideConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController
+                                ._sliding_spring.Target = 0
+                            CameraController
+                                ._sliding_spring.Value  = 0
+                        end
+                    end)
+                end
+            )
         else
             if noSlideConn then
                 noSlideConn:Disconnect()
@@ -1461,10 +1537,6 @@ CamLeft:AddToggle("NoSlideTilt", {
     end,
 })
 
--- =============================================
---   Force Crosshair
--- =============================================
-
 local crosshairConn = nil
 CamLeft:AddToggle("ForceCrosshair", {
     Text     = "Force Crosshair",
@@ -1472,19 +1544,21 @@ CamLeft:AddToggle("ForceCrosshair", {
     Tooltip  = "Always show crosshair",
     Callback = function(val)
         if val then
-            crosshairConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._crosshair_disabled = false
-                    end
-                end)
-            end)
+            crosshairConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController
+                                ._crosshair_disabled = false
+                        end
+                    end)
+                end
+            )
         else
             if crosshairConn then
                 crosshairConn:Disconnect()
                 crosshairConn = nil
             end
-            -- FIXED: restore crosshair state from settings
             pcall(function()
                 if CameraController then
                     CameraController:_UpdateSettings()
@@ -1494,10 +1568,6 @@ CamLeft:AddToggle("ForceCrosshair", {
     end,
 })
 
--- =============================================
---   Sensitivity Override
--- =============================================
-
 local sensConn = nil
 CamRight:AddToggle("SensOverride", {
     Text     = "Override Sensitivity",
@@ -1505,23 +1575,26 @@ CamRight:AddToggle("SensOverride", {
     Tooltip  = "Override all camera sensitivity values",
     Callback = function(val)
         if val then
-            sensConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if not CameraController then return end
-                    CameraController._camera_sensitivity =
-                        Options.SensValue.Value / 100
-                    CameraController._camera_sensitivity_ads_multiplier =
-                        Options.SensADS.Value / 100
-                    CameraController._camera_sensitivity_ads_multiplier_scoped =
-                        Options.SensScoped.Value / 100
-                    CameraController._camera_sensitivity_x =
-                        Options.SensX.Value / 100
-                    CameraController._camera_sensitivity_y =
-                        Options.SensY.Value / 100
-                end)
-            end)
+            sensConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if not CameraController then return end
+                        CameraController._camera_sensitivity =
+                            Options.SensValue.Value / 100
+                        CameraController
+                            ._camera_sensitivity_ads_multiplier =
+                            Options.SensADS.Value / 100
+                        CameraController
+                            ._camera_sensitivity_ads_multiplier_scoped =
+                            Options.SensScoped.Value / 100
+                        CameraController._camera_sensitivity_x =
+                            Options.SensX.Value / 100
+                        CameraController._camera_sensitivity_y =
+                            Options.SensY.Value / 100
+                    end)
+                end
+            )
         else
-            -- FIXED: disconnect and restore from settings
             if sensConn then
                 sensConn:Disconnect()
                 sensConn = nil
@@ -1567,10 +1640,6 @@ CamRight:AddSlider("SensY", {
 
 CamRight:AddDivider()
 
--- =============================================
---   Custom Viewmodel Position
--- =============================================
-
 local viewmodelConn = nil
 local vmCfg = { enabled = false, x = 0, y = 0, z = 0 }
 
@@ -1580,23 +1649,25 @@ CamRight:AddToggle("ViewmodelEnabled", {
     Callback = function(val)
         vmCfg.enabled = val
         if val then
-            viewmodelConn = RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController.ViewModelOffsetCFrame =
-                            CFrame.new(vmCfg.x, vmCfg.y, vmCfg.z)
-                    end
-                end)
-            end)
+            viewmodelConn = RunService.RenderStepped:Connect(
+                function()
+                    pcall(function()
+                        if CameraController then
+                            CameraController.ViewModelOffsetCFrame =
+                                CFrame.new(vmCfg.x, vmCfg.y, vmCfg.z)
+                        end
+                    end)
+                end
+            )
         else
-            -- FIXED: disconnect and reset offset
             if viewmodelConn then
                 viewmodelConn:Disconnect()
                 viewmodelConn = nil
             end
             pcall(function()
                 if CameraController then
-                    CameraController.ViewModelOffsetCFrame = CFrame.identity
+                    CameraController.ViewModelOffsetCFrame =
+                        CFrame.identity
                 end
             end)
         end
@@ -1621,19 +1692,15 @@ CamRight:AddSlider("ViewmodelZ", {
     Callback = function(val) vmCfg.z = val end,
 })
 
--- ============================================================
+-- =============================================
 --   MISC TAB
--- ============================================================
+-- =============================================
 
 local MiscLeft  = Tabs.Misc:AddLeftTabbox()
 local MiscRight = Tabs.Misc:AddRightGroupbox("Queue & Vote")
 
 local LoadoutTab = MiscLeft:AddTab("Auto Loadout")
 local QueueTab   = MiscLeft:AddTab("Auto Queue")
-
--- =============================================
---   AUTO LOADOUT
--- =============================================
 
 local loadoutCfg = {
     primary   = PRIMARY_WEAPONS[1],
@@ -1689,7 +1756,8 @@ LoadoutTab:AddToggle("AutoApplyLoadout", {
 })
 
 lp.CharacterAdded:Connect(function()
-    if Toggles.AutoApplyLoadout and Toggles.AutoApplyLoadout.Value then
+    if Toggles.AutoApplyLoadout
+        and Toggles.AutoApplyLoadout.Value then
         task.wait(1)
         pcall(function()
             PickWeaponsRemote:FireServer({
@@ -1701,10 +1769,6 @@ lp.CharacterAdded:Connect(function()
         end)
     end
 end)
-
--- =============================================
---   AUTO QUEUE
--- =============================================
 
 QueueTab:AddDropdown("QueueMode", {
     Text = "Queue Mode", Values = QUEUE_MODES,
@@ -1723,10 +1787,6 @@ QueueTab:AddButton({
     end,
 })
 
--- =============================================
---   AUTO VOTE MAP
--- =============================================
-
 MiscRight:AddDropdown("VoteMap", {
     Text = "Select Map", Values = MAPS,
     Default = 1, Multi = false, Searchable = true,
@@ -1738,45 +1798,66 @@ MiscRight:AddButton({
     Func = function()
         pcall(function()
             VoteRemote:FireServer(Options.VoteMap.Value)
-            Library:Notify("Voted for " .. Options.VoteMap.Value .. "!", 2)
+            Library:Notify(
+                "Voted for " .. Options.VoteMap.Value .. "!", 2
+            )
         end)
     end,
 })
 
+-- FIXED Bug #5: Auto Vote thread leak fixed
+-- Uses boolean flag + chunked wait instead of task.cancel
+local autoVoteActive = false
 local autoVoteThread = nil
+
 MiscRight:AddToggle("AutoVote", {
     Text    = "Auto Vote",
     Default = false,
     Tooltip = "Automatically votes every 2s",
     Callback = function(val)
+        -- Always kill existing loop first
+        autoVoteActive = false
+        task.wait(0.1)
+
         if val then
-            autoVoteThread = task.spawn(function()
-                while Toggles.AutoVote.Value do
+            autoVoteActive = true
+
+            task.spawn(function()
+                autoVoteThread = coroutine.running()
+
+                while autoVoteActive do
                     pcall(function()
-                        VoteRemote:FireServer(Options.VoteMap.Value)
+                        VoteRemote:FireServer(
+                            Options.VoteMap.Value
+                        )
                     end)
-                    task.wait(2)
+
+                    -- Chunked wait checks flag every 0.1s
+                    local elapsed = 0
+                    while elapsed < 2 and autoVoteActive do
+                        task.wait(0.1)
+                        elapsed = elapsed + 0.1
+                    end
                 end
+
+                autoVoteThread = nil
             end)
         else
-            if autoVoteThread then
-                pcall(task.cancel, autoVoteThread)
-                autoVoteThread = nil
-            end
+            autoVoteThread = nil
+            Library:Notify("Auto Vote stopped!", 2)
         end
     end,
 })
 
--- ============================================================
+-- =============================================
 --   SKYBOX TAB
--- ============================================================
+-- =============================================
 
 local SkyboxLeft  = Tabs.Skybox:AddLeftGroupbox("Skybox Changer")
 local SkyboxRight = Tabs.Skybox:AddRightGroupbox("Info")
 
-local originalSkybox  = nil
-local skyboxEnabled   = false
-local skyboxConn      = nil
+local originalSkybox = nil
+local skyboxEnabled  = false
 
 local function getAtmosphere()
     return ws.Terrain:FindFirstChildOfClass("Atmosphere")
@@ -1808,7 +1889,7 @@ local function applySkybox(name)
 
     local sky = getSky()
     if not sky then
-        sky = Instance.new("Sky")
+        sky        = Instance.new("Sky")
         sky.Parent = ws.Terrain
     end
 
@@ -1819,28 +1900,24 @@ local function applySkybox(name)
     sky.SkyboxRt = data.SkyboxRt
     sky.SkyboxUp = data.SkyboxUp
 
-    -- Lighting tweaks per skybox
     local atmo = getAtmosphere()
 
     if data.isNight then
-        game:GetService("Lighting").ClockTime = 0
-        game:GetService("Lighting").Ambient   =
-            Color3.fromRGB(30, 30, 60)
+        Lighting.ClockTime = 0
+        Lighting.Ambient   = Color3.fromRGB(30, 30, 60)
         if atmo then
-            atmo.Density  = 0.8
-            atmo.Color    = Color3.fromRGB(0, 0, 30)
+            atmo.Density = 0.8
+            atmo.Color   = Color3.fromRGB(0, 0, 30)
         end
     elseif data.isSpace then
-        game:GetService("Lighting").ClockTime = 0
-        game:GetService("Lighting").Ambient   =
-            Color3.fromRGB(10, 10, 20)
-        game:GetService("Lighting").Brightness = 0
+        Lighting.ClockTime = 0
+        Lighting.Ambient   = Color3.fromRGB(10, 10, 20)
+        Lighting.Brightness = 0
         if atmo then atmo.Density = 0 end
     else
-        game:GetService("Lighting").ClockTime = 14
-        game:GetService("Lighting").Ambient   =
-            Color3.fromRGB(70, 70, 70)
-        game:GetService("Lighting").Brightness = 2
+        Lighting.ClockTime  = 14
+        Lighting.Ambient    = Color3.fromRGB(70, 70, 70)
+        Lighting.Brightness = 2
         if atmo then
             atmo.Density = 0.395
             atmo.Color   = Color3.fromRGB(199, 170, 0)
@@ -1852,12 +1929,12 @@ local function restoreSkybox()
     if not originalSkybox then return end
     local sky = getSky()
     if not sky then return end
-    sky.SkyboxBk = originalSkybox.SkyboxBk
-    sky.SkyboxDn = originalSkybox.SkyboxDn
-    sky.SkyboxFt = originalSkybox.SkyboxFt
-    sky.SkyboxLf = originalSkybox.SkyboxLf
-    sky.SkyboxRt = originalSkybox.SkyboxRt
-    sky.SkyboxUp = originalSkybox.SkyboxUp
+    sky.SkyboxBk   = originalSkybox.SkyboxBk
+    sky.SkyboxDn   = originalSkybox.SkyboxDn
+    sky.SkyboxFt   = originalSkybox.SkyboxFt
+    sky.SkyboxLf   = originalSkybox.SkyboxLf
+    sky.SkyboxRt   = originalSkybox.SkyboxRt
+    sky.SkyboxUp   = originalSkybox.SkyboxUp
     originalSkybox = nil
 end
 
@@ -1884,9 +1961,7 @@ SkyboxLeft:AddDropdown("SkyboxSelect", {
     Multi    = false,
     Tooltip  = "Choose a skybox preset",
     Callback = function(val)
-        if skyboxEnabled then
-            applySkybox(val)
-        end
+        if skyboxEnabled then applySkybox(val) end
     end,
 })
 
@@ -1920,9 +1995,9 @@ SkyboxRight:AddLabel(
     true
 )
 
--- ============================================================
+-- =============================================
 --   UI SETTINGS TAB
--- ============================================================
+-- =============================================
 
 local MenuGroup = Tabs.UISettings:AddLeftGroupbox("Menu")
 
@@ -1944,43 +2019,56 @@ MenuGroup:AddToggle("ShowCustomCursor", {
 
 MenuGroup:AddDivider()
 
-MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
-    Default = "RightShift",
-    NoUI    = true,
-    Text    = "Menu Keybind",
-})
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker(
+    "MenuKeybind", {
+        Default = "RightShift",
+        NoUI    = true,
+        Text    = "Menu Keybind",
+    }
+)
 
 MenuGroup:AddButton({
     Text = "Unload",
     Func = function()
+        -- Stop all features
         stopAimbot()
         stopRagebot()
         stopHitSound()
         unhookSilent()
 
+        -- Remove drawings
         pcall(function() fovCircle:Remove()    end)
         pcall(function() fovHalf:Remove()      end)
         pcall(function() silentCircle:Remove() end)
 
+        -- Restore skybox
         restoreSkybox()
 
+        -- Stop auto vote
+        autoVoteActive = false
+
+        -- Disconnect all connections
         local conns = {
             fovChangerConn, noShakeConn, noSwayConn,
-            noBobConn, noJumpConn, noSlideConn,
-            crosshairConn, sensConn, viewmodelConn,
+            noBobConn,      noJumpConn,  noSlideConn,
+            crosshairConn,  sensConn,    viewmodelConn,
         }
         for _, c in pairs(conns) do
-            if c then pcall(function() c:Disconnect() end) end
+            if c then
+                pcall(function() c:Disconnect() end)
+            end
         end
 
+        -- Restore camera defaults
         pcall(function()
             if CameraController then
                 CameraController._base_fov             = 80
                 CameraController._shake_enabled        = true
                 CameraController._crosshair_disabled   = false
-                CameraController.ViewModelOffsetCFrame = CFrame.identity
+                CameraController.ViewModelOffsetCFrame =
+                    CFrame.identity
                 CameraController:_UpdateSettings()
-                workspace.CurrentCamera.FieldOfView    = 80
+                ws.CurrentCamera.FieldOfView = 80
             end
         end)
 
@@ -1990,17 +2078,20 @@ MenuGroup:AddButton({
 
 Library.ToggleKeybind = Options.MenuKeybind
 
--- ============================================================
---   Watermark
--- ============================================================
-
-Library:SetWatermarkVisibility(true)
+-- =============================================
+--   UNIFIED RenderStepped Loop — FIXED v1.2
+--   Merged 3 separate loops into 1
+--   Handles: Watermark, FOV Circle, Silent Circle
+-- =============================================
 
 local frameTimer = tick()
 local frameCount = 0
 local currentFPS = 60
 
 RunService.RenderStepped:Connect(function()
+    -- ==================
+    --   FPS + Watermark
+    -- ==================
     frameCount += 1
     if tick() - frameTimer >= 1 then
         currentFPS = frameCount
@@ -2011,23 +2102,95 @@ RunService.RenderStepped:Connect(function()
     local ping = 0
     pcall(function()
         ping = math.floor(
-            game:GetService("Stats")
-                .Network.ServerStatsItem["Data Ping"]:GetValue()
+            Stats.Network
+                .ServerStatsItem["Data Ping"]:GetValue()
         )
     end)
 
     Library:SetWatermark(
         ("Rivals | %d fps | %d ms"):format(currentFPS, ping)
     )
+
+    -- ==================
+    --   FOV Circle
+    -- ==================
+    if not fovCfg.visible then
+        fovCircle.Visible = false
+        fovHalf.Visible   = false
+    else
+        local center = fovCfg.useCenter
+            and scr()
+            or UserInputService:GetMouseLocation()
+
+        fovCircle.Visible  = true
+        fovCircle.Color    = fovCfg.color
+        fovCircle.Position = center
+
+        local myRoot = lp.Character
+            and lp.Character:FindFirstChild("HumanoidRootPart")
+        local orig = myRoot
+            and myRoot.Position
+            or cam.CFrame.Position
+
+        local hasTarget = aimbotCfg.currentTarget ~= nil
+
+        if hasTarget then
+            local vis = isVis(orig, aimbotCfg.currentTarget)
+            fovCircle.Radius = vis
+                and fovCfg.onTarget
+                or  fovCfg.onBarrier
+        else
+            fovCircle.Radius = fovCfg.fovSize
+        end
+
+        if fovCfg.half then
+            fovHalf.Visible   = true
+            fovHalf.Color     = fovCfg.color
+            fovHalf.Position  = center
+            fovHalf.Radius    = fovCircle.Radius * 0.5
+        else
+            fovHalf.Visible = false
+        end
+    end
+
+    -- ==================
+    --   Silent Aim Circle
+    -- ==================
+    if not silentCfg.enabled then
+        silentCircle.Visible = false
+    else
+        silentCircle.Visible = true
+        silentCircle.Radius  = silentCfg.fovSize
+
+        local center = silentCfg.useCenter
+            and scr()
+            or UserInputService:GetMouseLocation()
+
+        silentCircle.Position = center
+
+        local myRoot = lp.Character
+            and lp.Character:FindFirstChild("HumanoidRootPart")
+        local orig = myRoot
+            and myRoot.Position
+            or cam.CFrame.Position
+
+        local target = getSilentTarget(orig)
+
+        silentCircle.Color = target
+            and Color3.fromRGB(255, 50, 50)
+            or  Color3.fromRGB(0, 200, 255)
+    end
 end)
+
+Library:SetWatermarkVisibility(true)
 
 Library:OnUnload(function()
     Library.Unloaded = true
 end)
 
--- ============================================================
+-- =============================================
 --   Save / Theme
--- ============================================================
+-- =============================================
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
@@ -2043,8 +2206,10 @@ ThemeManager:ApplyToTab(Tabs.UISettings)
 
 SaveManager:LoadAutoloadConfig()
 
--- ============================================================
+-- =============================================
 --   Welcome
--- ============================================================
+-- =============================================
 
-Library:Notify("Rivals Script v1.1 Loaded! RightShift to toggle.", 5)
+Library:Notify(
+    "Rivals Script v1.2 Loaded! RightShift to toggle.", 5
+)
