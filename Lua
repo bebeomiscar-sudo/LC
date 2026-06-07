@@ -1,24 +1,233 @@
 -- =============================================
---   Rivals Script v1.3
+--   Rivals Script v1.4
 --   UI: Linoria Library
---   Built from scratch — Pro Scripter
---   Changes: v1.2 → v1.3
---   + Ragebot Vector Customization
---   + Improved Manipulation System
---   + Silent Aim own FOV Circle Tab
---   + Aimbot from Rivals Tool v3
+--   + Anti-Cheat Bypass
+--   + No Player.Mouse (uses UserInputService)
+--   + Wallbang System from source
+--   + Improved Manipulation
+--   + Silent Aim own FOV Tab
+--   + v3 Aimbot
 -- =============================================
 
-local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
-local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+-- =============================================
+--   ANTI-CHEAT BYPASS
+--   Must run BEFORE everything else
+-- =============================================
 
-local Options = getgenv().Options
-local Toggles = getgenv().Toggles
+-- Bypass 1: MiscellaneousController weak table hook
+local oldSetMeta
+oldSetMeta = hookfunction(
+    getrenv().setmetatable,
+    newcclosure(function(Table, Metatable)
+        if Metatable
+            and typeof(Metatable) == "table"
+            and rawget(Metatable, "__mode") == "kv" then
+            local trace = debug.traceback()
+            if trace:find("MiscellaneousController") then
+                return oldSetMeta({1, 2, 3}, {})
+            end
+        end
+        return oldSetMeta(Table, Metatable)
+    end)
+)
 
-Library.ShowCustomCursor = true
-Library.NotifySide       = "Left"
+-- Bypass 2: AnalyticsPipelineController hang
+task.spawn(function()
+    local hooked = 0
+    for _, v in pairs(getgc(true)) do
+        if typeof(v) == "function" then
+            local ok, src = pcall(function()
+                return debug.info(v, "s")
+            end)
+            if ok and type(src) == "string"
+                and src:find("AnalyticsPipelineController") then
+                hooked += 1
+                hookfunction(v, newcclosure(function(...)
+                    return task.wait(9e9)
+                end))
+            end
+        end
+    end
+    print("[AC] Hung " .. hooked .. " AC functions")
+end)
+
+-- Bypass 3: AnalyticsPipeline remote hook
+task.spawn(function()
+    local ok, remote = pcall(function()
+        return game:GetService("ReplicatedStorage")
+            :WaitForChild("Remotes")
+            :WaitForChild("AnalyticsPipeline")
+            :WaitForChild("RemoteEvent")
+    end)
+    if ok and remote and remote.OnClientEvent then
+        local hooked = 0
+        for _, conn in pairs(
+            getconnections(remote.OnClientEvent)
+        ) do
+            if conn and conn.Function then
+                if pcall(function()
+                    hookfunction(
+                        conn.Function,
+                        newcclosure(function(...) end)
+                    )
+                end) then
+                    hooked += 1
+                end
+            end
+        end
+        print("[AC] Hooked " .. hooked .. " AC remotes")
+    end
+end)
+
+-- Bypass 4: LogService MessageOut hook
+task.spawn(function()
+    local LogService = game:GetService("LogService")
+    local hooked = 0
+    for _, conn in pairs(
+        getconnections(LogService.MessageOut)
+    ) do
+        if conn and conn.Function then
+            if pcall(function()
+                hookfunction(
+                    conn.Function,
+                    newcclosure(function(...) end)
+                )
+            end) then
+                hooked += 1
+            end
+        end
+    end
+    print("[AC] Hooked " .. hooked .. " MessageOut")
+end)
+
+-- Bypass 5: ScriptContext error disable
+task.spawn(function()
+    local ScriptContext = game:GetService("ScriptContext")
+    local hooked = 0
+    for _, conn in ipairs(
+        getconnections(ScriptContext.Error)
+    ) do
+        if pcall(function() conn:Disable() end) then
+            hooked += 1
+        end
+    end
+    pcall(function()
+        hookfunction(
+            ScriptContext.Error.Connect,
+            newcclosure(function(...) return nil end)
+        )
+    end)
+    print("[AC] Disabled " .. hooked .. " error conns")
+end)
+
+-- Bypass 6: Anti-Kick protection
+task.spawn(function()
+    local Players    = game:GetService("Players")
+    local lp2        = Players.LocalPlayer
+    local KickNames  = {"Kick", "kick"}
+    for _, name in ipairs(KickNames) do
+        local fn = lp2[name]
+        if type(fn) == "function" then
+            local oldkick
+            oldkick = hookfunction(
+                fn,
+                newcclosure(function(self, ...)
+                    if self == lp2 then return end
+                    return oldkick(self, ...)
+                end)
+            )
+        end
+    end
+end)
+
+-- Bypass 7: Fake ClientAlert + namecall block
+task.spawn(function()
+    local plrs = game:GetService("Players")
+    local lp3  = plrs.LocalPlayer
+
+    -- Fake ClientAlert remote
+    local fake = Instance.new("RemoteEvent")
+    fake.Name   = "ClientAlert"
+    fake.Parent = lp3
+
+    -- Spoof WaitForChild("ClientAlert")
+    local pmt  = getrawmetatable(lp3)
+    local oldnc = pmt.__namecall
+    setreadonly(pmt, false)
+    pmt.__namecall = newcclosure(function(self, ...)
+        if getnamecallmethod() == "WaitForChild"
+            and select(1, ...) == "ClientAlert" then
+            return fake
+        end
+        return oldnc(self, ...)
+    end)
+    setreadonly(pmt, true)
+
+    -- Block Kick + FireServer on fake remote
+    local mt  = getrawmetatable(game)
+    local old = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local m = getnamecallmethod()
+        if self == lp3
+            and (m == "Kick" or m == "kick") then
+            return
+        end
+        if m:lower():find("kick")
+            or m == "Shutdown" then
+            return
+        end
+        if m == "FireServer" and self == fake then
+            return
+        end
+        return old(self, ...)
+    end)
+    setreadonly(mt, true)
+end)
+
+-- Bypass 8: LocalScript3 / LoadingScreen anti-cheat neuter
+task.spawn(function()
+    local rf  = game:GetService("ReplicatedFirst")
+    local ls3 = rf:WaitForChild("LocalScript3", 10)
+    local c   = 0
+    if ls3 then
+        for _, f in getgc(false) do
+            if typeof(f) == "function" then
+                local ok, e = pcall(getfenv, f)
+                if ok and e then
+                    local scr = rawget(e, "script")
+                    if scr and (
+                        scr == ls3
+                        or tostring(scr):find("LoadingScreen")
+                    ) then
+                        local ok2, cs = pcall(
+                            debug.getconstants, f
+                        )
+                        if ok2 then
+                            for _, k in cs do
+                                if typeof(k) == "string"
+                                    and (
+                                        k:find("TakeTheL")
+                                        or k:find("ban")
+                                        or k:find("kick")
+                                    ) then
+                                    hookfunction(
+                                        f, function() end
+                                    )
+                                    c = c + 1
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    print("[AC] Neutered " .. c .. " AC closures")
+end)
+
+print("[AC] All bypass layers active")
 
 -- =============================================
 --   Services
@@ -33,6 +242,21 @@ local Lighting          = cloneref(game:GetService("Lighting"))
 local ws                = cloneref(game:GetService("Workspace"))
 local lp               = Players.LocalPlayer
 local cam              = ws.CurrentCamera
+
+-- =============================================
+--   Linoria Library
+-- =============================================
+
+local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
+local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = getgenv().Options
+local Toggles = getgenv().Toggles
+
+Library.ShowCustomCursor = true
+Library.NotifySide       = "Left"
 
 -- =============================================
 --   Safe Require
@@ -65,6 +289,10 @@ local util = safeRequire(
 local enums = safeRequire(
     ReplicatedStorage:WaitForChild("Modules")
                      :WaitForChild("EnumLibrary")
+)
+
+local GunModule = safeRequire(
+    lp.PlayerScripts.Modules.ItemTypes.Gun
 )
 
 local DebugController = safeRequire(
@@ -253,7 +481,7 @@ local SKYBOXES = {
 local SKYBOX_LIST = {"Default","Night Sky","Bliss","Sunset","Space"}
 
 -- =============================================
---   Part System (from v3)
+--   Part System
 -- =============================================
 
 local PARTS = {
@@ -292,6 +520,9 @@ end
 
 -- =============================================
 --   Helpers
+--   NOTE: No Player.Mouse usage anywhere
+--   Uses UserInputService:GetMouseLocation()
+--   and cam:WorldToViewportPoint() instead
 -- =============================================
 
 local function scr()
@@ -299,6 +530,12 @@ local function scr()
         cam.ViewportSize.X / 2,
         cam.ViewportSize.Y / 2
     )
+end
+
+-- Safe mouse position — NO Player.Mouse
+-- Uses UserInputService to avoid AC flags
+local function getMousePos()
+    return UserInputService:GetMouseLocation()
 end
 
 local function sameTm(p)
@@ -350,20 +587,20 @@ end
 --   COMBAT TAB SETUP
 -- =============================================
 
-local CombatLeft  = Tabs.Combat:AddLeftTabbox()
-local CombatRight = Tabs.Combat:AddRightTabbox()
+local CombatLeft   = Tabs.Combat:AddLeftTabbox()
+local CombatRight  = Tabs.Combat:AddRightTabbox()
 
-local AimbotTab   = CombatLeft:AddTab("Aimbot")
-local SilentTab   = CombatLeft:AddTab("Silent Aim")
-local RagebotTab  = CombatLeft:AddTab("Ragebot")
-local HitSoundTab = CombatLeft:AddTab("Hit Sound")
-local FOVTab      = CombatRight:AddTab("Aimbot FOV")
+local AimbotTab    = CombatLeft:AddTab("Aimbot")
+local SilentTab    = CombatLeft:AddTab("Silent Aim")
+local RagebotTab   = CombatLeft:AddTab("Ragebot")
+local WallbangTab  = CombatLeft:AddTab("Wallbang")
+local HitSoundTab  = CombatLeft:AddTab("Hit Sound")
+local FOVTab       = CombatRight:AddTab("Aimbot FOV")
 local SilentFOVTab = CombatRight:AddTab("Silent FOV")
 
 -- =============================================
---   AIMBOT (Ported from Rivals Tool v3)
---   Uses: SmartLock, Curve, Prediction,
---   React Time, Dynamic FOV, Part System
+--   AIMBOT (v3 — SmartLock + Curve + Predict)
+--   No Player.Mouse — uses getMousePos()
 -- =============================================
 
 local AB = {
@@ -384,7 +621,6 @@ local AB = {
     useCenter     = false,
 }
 
--- Aimbot state
 local abTgt           = nil
 local abLockT         = 0
 local abReactT        = 0
@@ -396,18 +632,16 @@ local abCurveStart    = nil
 local abCurveEnd      = nil
 
 local abCirc = Drawing.new("Circle")
-abCirc.NumSides    = 64
-abCirc.Filled      = false
-abCirc.Color       = Color3.fromRGB(255, 255, 255)
-abCirc.Thickness   = 1.5
+abCirc.NumSides     = 64
+abCirc.Filled       = false
+abCirc.Color        = Color3.fromRGB(255, 255, 255)
+abCirc.Thickness    = 1.5
 abCirc.Transparency = 0.7
-abCirc.Visible     = false
+abCirc.Visible      = false
 
 local function abEffFov()
     local f = AB.fov
-    if AB.dynFov then
-        f = f * (cam.FieldOfView / 70)
-    end
+    if AB.dynFov then f = f * (cam.FieldOfView / 70) end
     return f
 end
 
@@ -427,9 +661,10 @@ local function abTgtValid(pt)
 end
 
 local function abFind()
+    -- Uses getMousePos() instead of Player.Mouse
     local center = AB.useCenter
         and scr()
-        or UserInputService:GetMouseLocation()
+        or getMousePos()
 
     local fv   = abEffFov()
     local best = nil
@@ -446,6 +681,7 @@ local function abFind()
         if not pt then continue end
         local sp, on = cam:WorldToViewportPoint(pt.Position)
         if not on then continue end
+        -- WorldToViewportPoint — no Mouse needed
         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if d < bd then
             if AB.vis and not isVis(cam.CFrame.Position, pt) then
@@ -493,7 +729,6 @@ local function applySmartLock(tRot, cur, dt, screenDist, fovRadius)
             cur.Y + angDiff(cur.Y, tRot.Y) * factor
         )
     else
-        -- Curve mode
         local distP = math.abs(tRot.X - cur.X)
         local distY = math.abs(angDiff(cur.Y, tRot.Y))
         local dist  = math.sqrt(distP^2 + distY^2)
@@ -550,28 +785,25 @@ AimbotTab:AddToggle("AimbotEnabled", {
 AimbotTab:AddToggle("AimbotTeamCheck", {
     Text     = "Team Check",
     Default  = true,
-    Tooltip  = "Skip teammates",
     Callback = function(val) AB.team = val end,
 })
 
 AimbotTab:AddToggle("AimbotVisCheck", {
     Text     = "Visible Check",
     Default  = true,
-    Tooltip  = "Only lock visible enemies",
     Callback = function(val) AB.vis = val end,
 })
 
 AimbotTab:AddToggle("AimbotUseCenter", {
-    Text     = "Screen Center",
+    Text     = "Screen Center (Mobile)",
     Default  = false,
-    Tooltip  = "Use screen center instead of mouse",
+    Tooltip  = "Use screen center — no mouse needed",
     Callback = function(val) AB.useCenter = val end,
 })
 
 AimbotTab:AddToggle("AimbotDynFOV", {
     Text     = "Dynamic FOV",
     Default  = false,
-    Tooltip  = "Scales FOV with camera zoom",
     Callback = function(val) AB.dynFov = val end,
 })
 
@@ -580,7 +812,6 @@ AimbotTab:AddDropdown("AimbotPart", {
     Values   = PARTS,
     Default  = 1,
     Multi    = false,
-    Tooltip  = "Which body part to aim at",
     Callback = function(val) AB.part = val end,
 })
 
@@ -604,7 +835,6 @@ AimbotTab:AddSlider("AimbotSpeed", {
     Max      = 500,
     Rounding = 0,
     Suffix   = "x0.01",
-    Tooltip  = "Base lock-on speed",
     Callback = function(val) AB.speed = val / 100 end,
 })
 
@@ -615,7 +845,6 @@ AimbotTab:AddSlider("AimbotSpeedAtk", {
     Max      = 500,
     Rounding = 0,
     Suffix   = "x0.01",
-    Tooltip  = "Speed while attacking / predicting",
     Callback = function(val) AB.speedAttack = val / 100 end,
 })
 
@@ -626,7 +855,6 @@ AimbotTab:AddSlider("AimbotSpeedScaleFov", {
     Max      = 100,
     Rounding = 0,
     Suffix   = "%",
-    Tooltip  = "Speed boost when target near FOV edge",
     Callback = function(val) AB.speedScaleFov = val end,
 })
 
@@ -637,7 +865,6 @@ AimbotTab:AddSlider("AimbotCurve", {
     Max      = 400,
     Rounding = 0,
     Suffix   = "%",
-    Tooltip  = "Curve arc strength (Curve mode only)",
     Callback = function(val) AB.curvePct = val end,
 })
 
@@ -648,7 +875,6 @@ AimbotTab:AddSlider("AimbotMaxLock", {
     Max      = 1000,
     Rounding = 0,
     Suffix   = "x0.01s",
-    Tooltip  = "Max seconds to lock one target",
     Callback = function(val) AB.maxLock = val / 100 end,
 })
 
@@ -659,11 +885,10 @@ AimbotTab:AddSlider("AimbotReaction", {
     Max      = 500,
     Rounding = 0,
     Suffix   = "ms",
-    Tooltip  = "Delay before locking new target",
     Callback = function(val) AB.reactTime = val end,
 })
 
--- FOV Circle Tab (Aimbot)
+-- Aimbot FOV Circle
 local fovCfg = {
     visible   = true,
     half      = false,
@@ -675,20 +900,20 @@ local fovCfg = {
 }
 
 local fovCircle = Drawing.new("Circle")
-fovCircle.Visible    = false
-fovCircle.Thickness  = 1.5
-fovCircle.Color      = Color3.fromRGB(255, 255, 255)
-fovCircle.Filled     = false
-fovCircle.NumSides   = 64
-fovCircle.Radius     = 150
+fovCircle.Visible   = false
+fovCircle.Thickness = 1.5
+fovCircle.Color     = Color3.fromRGB(255, 255, 255)
+fovCircle.Filled    = false
+fovCircle.NumSides  = 64
+fovCircle.Radius    = 150
 
 local fovHalf = Drawing.new("Circle")
-fovHalf.Visible    = false
-fovHalf.Thickness  = 1
-fovHalf.Color      = Color3.fromRGB(255, 255, 255)
-fovHalf.Filled     = false
-fovHalf.NumSides   = 32
-fovHalf.Radius     = 75
+fovHalf.Visible   = false
+fovHalf.Thickness = 1
+fovHalf.Color     = Color3.fromRGB(255, 255, 255)
+fovHalf.Filled    = false
+fovHalf.NumSides  = 32
+fovHalf.Radius    = 75
 
 FOVTab:AddToggle("FOVVisible", {
     Text     = "Show FOV Circle",
@@ -751,27 +976,23 @@ FOVTab:AddSlider("FOVOnBarrier", {
 
 -- =============================================
 --   SILENT AIM
---   Own FOV Circle in SilentFOVTab
 -- =============================================
 
 local silentCfg = {
-    enabled    = false,
-    hitChance  = 100,
-    prediction = 0,
-    visCheck   = true,
-    useCenter  = false,
-    fovSize    = 150,
-    maxDist    = 200,
-    part       = "Head",
-    -- FOV Circle settings
+    enabled       = false,
+    hitChance     = 100,
+    prediction    = 0,
+    visCheck      = true,
+    useCenter     = false,
+    fovSize       = 150,
+    maxDist       = 200,
+    part          = "Head",
     circleVisible = true,
     circleColor   = Color3.fromRGB(0, 200, 255),
     circleThick   = 1.5,
-    onTarget      = false,
     targetColor   = Color3.fromRGB(255, 50, 50),
 }
 
--- Silent Aim own Drawing Circle
 local silentCircle = Drawing.new("Circle")
 silentCircle.Thickness = 1.5
 silentCircle.Filled    = false
@@ -780,16 +1001,16 @@ silentCircle.Visible   = false
 silentCircle.Radius    = 150
 silentCircle.Color     = Color3.fromRGB(0, 200, 255)
 
--- Hook state
-local silentHooked  = false
-local origRaycast   = nil
-local origMeta      = nil
-local origIndex     = nil
+local silentHooked = false
+local origRaycast  = nil
+local origMeta     = nil
+local origIndex    = nil
 
 local function getSilentTarget(origin)
+    -- No Player.Mouse — uses getMousePos()
     local center = silentCfg.useCenter
         and scr()
-        or UserInputService:GetMouseLocation()
+        or getMousePos()
 
     local best, bestDist = nil, math.huge
 
@@ -803,21 +1024,15 @@ local function getSilentTarget(origin)
         if not head or not hum or hum.Health <= 0 then continue end
 
         if (origin - head.Position).Magnitude
-            > silentCfg.maxDist then
-            continue
-        end
+            > silentCfg.maxDist then continue end
 
         if silentCfg.visCheck
-            and not isVis(origin, head) then
-            continue
-        end
+            and not isVis(origin, head) then continue end
 
         local sp, vis = cam:WorldToViewportPoint(head.Position)
         if not vis then continue end
 
-        local screenPos = Vector2.new(sp.X, sp.Y)
-        local d = (screenPos - center).Magnitude
-
+        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if d < silentCfg.fovSize and d < bestDist then
             bestDist = d
             best     = head
@@ -857,9 +1072,10 @@ local function buildSilentWrapper(originalFunc)
                         end)
                     end
 
-                    local fakeDir = predictedPos - origin
                     return originalFunc(
-                        self, origin, fakeDir, distance, ...
+                        self, origin,
+                        predictedPos - origin,
+                        distance, ...
                     )
                 end
             end
@@ -885,7 +1101,6 @@ local function hookSilent()
             rawset(mt, "__index", function(t, k)
                 if k == "Raycast" then
                     local realFunc = nil
-
                     if type(origIndex) == "function" then
                         realFunc = origIndex(t, k)
                     elseif type(origIndex) == "table" then
@@ -893,12 +1108,10 @@ local function hookSilent()
                     else
                         realFunc = rawget(t, k)
                     end
-
                     if realFunc then
                         return buildSilentWrapper(realFunc)
                     end
                 end
-
                 if type(origIndex) == "function" then
                     return origIndex(t, k)
                 elseif type(origIndex) == "table" then
@@ -915,10 +1128,7 @@ local function hookSilent()
     -- Rawset fallback
     origRaycast = rawget(util, "Raycast") or util.Raycast
     if origRaycast then
-        rawset(
-            util, "Raycast",
-            buildSilentWrapper(origRaycast)
-        )
+        rawset(util, "Raycast", buildSilentWrapper(origRaycast))
         silentHooked = true
     end
 end
@@ -942,34 +1152,25 @@ local function unhookSilent()
     silentHooked = false
 end
 
--- Silent Aim UI
 SilentTab:AddToggle("SilentEnabled", {
     Text     = "Enable Silent Aim",
     Default  = false,
-    Tooltip  = "Server side aim via Utility hook",
     Callback = function(val)
         silentCfg.enabled = val
-        if val then
-            hookSilent()
-            Library:Notify("Silent Aim Active!", 2)
-        else
-            unhookSilent()
-            Library:Notify("Silent Aim Off", 2)
-        end
+        if val then hookSilent(); Library:Notify("Silent Aim Active!", 2)
+        else unhookSilent(); Library:Notify("Silent Aim Off", 2) end
     end,
 })
 
 SilentTab:AddToggle("SilentVisCheck", {
     Text     = "Visible Check",
     Default  = true,
-    Tooltip  = "Only aim at visible enemies",
     Callback = function(val) silentCfg.visCheck = val end,
 })
 
 SilentTab:AddToggle("SilentUseCenter", {
     Text     = "Screen Center",
     Default  = false,
-    Tooltip  = "Use center instead of mouse",
     Callback = function(val) silentCfg.useCenter = val end,
 })
 
@@ -978,7 +1179,6 @@ SilentTab:AddDropdown("SilentPart", {
     Values   = PARTS,
     Default  = 1,
     Multi    = false,
-    Tooltip  = "Which body part to silent aim at",
     Callback = function(val) silentCfg.part = val end,
 })
 
@@ -989,7 +1189,6 @@ SilentTab:AddSlider("SilentHitChance", {
     Max      = 100,
     Rounding = 0,
     Suffix   = "%",
-    Tooltip  = "Chance to redirect raycast",
     Callback = function(val) silentCfg.hitChance = val end,
 })
 
@@ -1000,7 +1199,6 @@ SilentTab:AddSlider("SilentPrediction", {
     Max      = 100,
     Rounding = 0,
     Suffix   = "x0.05",
-    Tooltip  = "Lead moving targets",
     Callback = function(val) silentCfg.prediction = val end,
 })
 
@@ -1027,11 +1225,10 @@ SilentTab:AddSlider("SilentMaxDist", {
     Callback = function(val) silentCfg.maxDist = val end,
 })
 
--- Silent Aim FOV Circle Tab (own tab)
+-- Silent Aim FOV Circle Tab
 SilentFOVTab:AddToggle("SilentCircleVisible", {
     Text     = "Show Silent FOV Circle",
     Default  = true,
-    Tooltip  = "Toggle Silent Aim FOV circle",
     Callback = function(val)
         silentCfg.circleVisible = val
         if not val then silentCircle.Visible = false end
@@ -1042,30 +1239,23 @@ SilentFOVTab:AddLabel(
     "Normal Color"):AddColorPicker("SilentCircleColor", {
     Default  = Color3.fromRGB(0, 200, 255),
     Title    = "Silent FOV Color",
-    Tooltip  = "Color when no target in FOV",
-    Callback = function(val)
-        silentCfg.circleColor = val
-    end,
+    Callback = function(val) silentCfg.circleColor = val end,
 })
 
 SilentFOVTab:AddLabel(
     "On Target Color"):AddColorPicker("SilentTargetColor", {
     Default  = Color3.fromRGB(255, 50, 50),
     Title    = "On Target Color",
-    Tooltip  = "Color when enemy detected in FOV",
-    Callback = function(val)
-        silentCfg.targetColor = val
-    end,
+    Callback = function(val) silentCfg.targetColor = val end,
 })
 
 SilentFOVTab:AddSlider("SilentCircleThick", {
-    Text     = "Circle Thickness",
+    Text     = "Thickness",
     Default  = 15,
     Min      = 5,
     Max      = 50,
     Rounding = 1,
     Suffix   = "x0.1",
-    Tooltip  = "Thickness of the FOV circle line",
     Callback = function(val)
         silentCfg.circleThick  = val * 0.1
         silentCircle.Thickness = val * 0.1
@@ -1079,7 +1269,6 @@ SilentFOVTab:AddSlider("SilentCircleFOV", {
     Max      = 600,
     Rounding = 0,
     Suffix   = "px",
-    Tooltip  = "Radius of the Silent Aim FOV circle",
     Callback = function(val)
         silentCfg.fovSize   = val
         silentCircle.Radius = val
@@ -1093,7 +1282,6 @@ SilentFOVTab:AddSlider("SilentCircleSegments", {
     Max      = 128,
     Rounding = 0,
     Suffix   = " sides",
-    Tooltip  = "Smoothness of the circle drawing",
     Callback = function(val)
         silentCircle.NumSides = val
     end,
@@ -1101,48 +1289,31 @@ SilentFOVTab:AddSlider("SilentCircleSegments", {
 
 -- =============================================
 --   RAGEBOT
---   + Customizable Vector Offsets
---   + Improved Manipulation System
+--   Customizable Vectors + Improved Manip
 -- =============================================
 
 local rageCfg = {
     enabled       = false,
     improvedManip = false,
-    -- Custom vectors (user editable)
-    vectors = {
-        Vector3.new(0, 12, 0),
-        Vector3.new(0, 16, 0),
-        Vector3.new(0, 20, 0),
-        Vector3.new(0, 24, 0),
-        Vector3.new(0, 28, 0),
-        Vector3.new(0, 32, 0),
-        Vector3.new(0, 36, 0),
-        Vector3.new(0, 40, 0),
-    },
-    -- Individual vector controls
     v1y = 12, v2y = 16, v3y = 20, v4y = 24,
     v5y = 28, v6y = 32, v7y = 36, v8y = 40,
-    -- X and Z axes
-    v1x = 0, v1z = 0,
-    v2x = 0, v2z = 0,
-    v3x = 0, v3z = 0,
-    v4x = 0, v4z = 0,
-    -- Improved manipulation config
+    v1x = 0,  v2x = 0,  v3x = 0,  v4x = 0,
+    v1z = 0,  v2z = 0,  v3z = 0,  v4z = 0,
+    vectors = {},
     improv = {
-        scanAngle    = 15,   -- degrees offset scan
-        multiPass    = true, -- multi-pass wall check
-        spiralScan   = false,-- spiral around target
-        adaptDist    = true, -- adapt scan distance
+        scanAngle  = 15,
+        multiPass  = true,
+        spiralScan = false,
+        adaptDist  = true,
     },
 }
 
-local rageConn  = nil
+local rageConn    = nil
 local rageRunning = false
 
 local ray_params = RaycastParams.new()
 ray_params.FilterType = Enum.RaycastFilterType.Exclude
 
--- Rebuild vectors from individual Y values
 local function rebuildVectors()
     rageCfg.vectors = {
         Vector3.new(rageCfg.v1x, rageCfg.v1y, rageCfg.v1z),
@@ -1156,14 +1327,14 @@ local function rebuildVectors()
     }
 end
 
+rebuildVectors()
+
 local function rageGetClosest()
     if not lp.Character
         or not lp.Character:FindFirstChild("HumanoidRootPart") then
         return nil, nil
     end
-
     local target, char, dist = nil, nil, math.huge
-
     for _, v in pairs(Players:GetPlayers()) do
         if v ~= lp and v.Character
             and v.Character:FindFirstChild("Head") then
@@ -1178,22 +1349,18 @@ local function rageGetClosest()
             end
         end
     end
-
     return target, char
 end
 
--- Standard wall scan
 local function rageCalcPoint(origin, targetPos, targetChar)
     ray_params.FilterDescendantsInstances = {
         lp.Character, targetChar
     }
-
     if not ws:Raycast(
         origin, targetPos - origin, ray_params
     ) then
         return origin, nil
     end
-
     for _, offset in next, rageCfg.vectors do
         local scanPos = origin + offset
         if not ws:Raycast(
@@ -1202,34 +1369,26 @@ local function rageCalcPoint(origin, targetPos, targetChar)
             return scanPos, offset.Y
         end
     end
-
     return nil, nil
 end
 
--- IMPROVED MANIPULATION SYSTEM
--- More advanced wall detection using:
--- 1. Multi-pass scan with angle offsets
--- 2. Spiral scan pattern
--- 3. Adaptive distance scaling
--- 4. Side-step scan for thin walls
+-- Improved Manipulation — 6-pass wall scan
 local function improvedCalcPoint(origin, targetPos, targetChar)
     ray_params.FilterDescendantsInstances = {
         lp.Character, targetChar
     }
 
     local function tryPoint(scanPos)
-        local dir = targetPos - scanPos
+        local dir    = targetPos - scanPos
         local result = ws:Raycast(scanPos, dir, ray_params)
         return result == nil
             or result.Instance:IsDescendantOf(targetChar)
     end
 
-    -- Pass 1: Direct LOS check
-    if tryPoint(origin) then
-        return origin, nil
-    end
+    -- Pass 1: Direct LOS
+    if tryPoint(origin) then return origin, nil end
 
-    -- Pass 2: Standard vector offset scan
+    -- Pass 2: Standard vector offsets
     for _, offset in next, rageCfg.vectors do
         local scanPos = origin + offset
         if tryPoint(scanPos) then
@@ -1239,75 +1398,72 @@ local function improvedCalcPoint(origin, targetPos, targetChar)
 
     -- Pass 3: Multi-pass angle scan
     if rageCfg.improv.multiPass then
-        local angleStep = rageCfg.improv.scanAngle
+        local step = rageCfg.improv.scanAngle
         for _, offset in next, rageCfg.vectors do
-            -- Try rotated offsets
-            for angle = -45, 45, angleStep do
-                local rad = math.rad(angle)
+            for angle = -45, 45, step do
+                local rad  = math.rad(angle)
                 local rotX = offset.X * math.cos(rad)
                     - offset.Z * math.sin(rad)
                 local rotZ = offset.X * math.sin(rad)
                     + offset.Z * math.cos(rad)
-                local scanPos = origin + Vector3.new(
+                local sp = origin + Vector3.new(
                     rotX, offset.Y, rotZ
                 )
-                if tryPoint(scanPos) then
-                    return scanPos, offset.Y
+                if tryPoint(sp) then
+                    return sp, offset.Y
                 end
             end
         end
     end
 
-    -- Pass 4: Spiral scan around target position
+    -- Pass 4: Spiral scan
     if rageCfg.improv.spiralScan then
-        local radius  = 2
-        local steps   = 12
-        local layers  = 4
+        local radius = 2
+        local steps  = 12
+        local layers = 4
         for layer = 1, layers do
             local height = layer * 8
             for step = 0, steps - 1 do
-                local angle  = (step / steps) * math.pi * 2
-                local spiral = origin + Vector3.new(
+                local angle = (step / steps) * math.pi * 2
+                local sp = origin + Vector3.new(
                     math.cos(angle) * radius * layer,
                     height,
                     math.sin(angle) * radius * layer
                 )
-                if tryPoint(spiral) then
-                    return spiral, height
+                if tryPoint(sp) then
+                    return sp, height
                 end
             end
         end
     end
 
-    -- Pass 5: Side-step scan (for thin walls)
-    local sideOffsets = {
-        Vector3.new(2, 0, 0),  Vector3.new(-2, 0, 0),
-        Vector3.new(0, 0, 2),  Vector3.new(0, 0, -2),
-        Vector3.new(3, 8, 0),  Vector3.new(-3, 8, 0),
-        Vector3.new(0, 8, 3),  Vector3.new(0, 8, -3),
+    -- Pass 5: Side-step scan
+    local sides = {
+        Vector3.new(2, 0, 0), Vector3.new(-2, 0, 0),
+        Vector3.new(0, 0, 2), Vector3.new(0, 0, -2),
+        Vector3.new(3, 8, 0), Vector3.new(-3, 8, 0),
+        Vector3.new(0, 8, 3), Vector3.new(0, 8, -3),
     }
-
-    for _, side in next, sideOffsets do
-        local scanPos = origin + side
-        if tryPoint(scanPos) then
-            return scanPos, side.Y
+    for _, side in next, sides do
+        local sp = origin + side
+        if tryPoint(sp) then
+            return sp, side.Y
         end
     end
 
     -- Pass 6: Adaptive distance scan
-    -- Scales scan positions based on distance to target
     if rageCfg.improv.adaptDist then
-        local dist    = (origin - targetPos).Magnitude
-        local scale   = math.clamp(dist / 50, 0.5, 3)
+        local dist  = (origin - targetPos).Magnitude
+        local scale = math.clamp(dist / 50, 0.5, 3)
         for _, offset in next, rageCfg.vectors do
-            local scaledOffset = Vector3.new(
+            local scaled = Vector3.new(
                 offset.X * scale,
                 offset.Y * scale,
                 offset.Z * scale
             )
-            local scanPos = origin + scaledOffset
-            if tryPoint(scanPos) then
-                return scanPos, scaledOffset.Y
+            local sp = origin + scaled
+            if tryPoint(sp) then
+                return sp, scaled.Y
             end
         end
     end
@@ -1316,11 +1472,7 @@ local function improvedCalcPoint(origin, targetPos, targetChar)
 end
 
 local function startRagebot()
-    if rageConn then
-        rageConn:Disconnect()
-        rageConn = nil
-    end
-
+    if rageConn then rageConn:Disconnect(); rageConn = nil end
     rageRunning = false
 
     rageConn = RunService.Heartbeat:Connect(function()
@@ -1332,7 +1484,6 @@ local function startRagebot()
             "HumanoidRootPart"
         )
         if not root then return end
-
         if not FighterController
             or not FighterController.LocalFighter then
             return
@@ -1345,9 +1496,8 @@ local function startRagebot()
         if not targetPart or not targetChar then return end
 
         local camCF = cam.CFrame
-
-        -- Choose scan method
         local manip, height
+
         if rageCfg.improvedManip then
             manip, height = improvedCalcPoint(
                 camCF.Position,
@@ -1365,7 +1515,6 @@ local function startRagebot()
         if not manip then return end
 
         rageRunning = true
-
         task.spawn(function()
             pcall(function()
                 local shootOrigin = height ~= nil
@@ -1376,16 +1525,12 @@ local function startRagebot()
                     )
                     or camCF.Position
 
-                -- FIXED: CFrame.lookAt (Bug #3 fix)
                 local cf1 = CFrame.lookAt(
-                    shootOrigin,
-                    targetPart.Position
+                    shootOrigin, targetPart.Position
                 )
                 local cf2 = CFrame.lookAt(
-                    targetPart.Position,
-                    shootOrigin
+                    targetPart.Position, shootOrigin
                 )
-
                 local relativeCF = targetPart.CFrame:ToObjectSpace(
                     CFrame.new(targetPart.Position)
                 )
@@ -1405,56 +1550,42 @@ local function startRagebot()
                     nil
                 )
             end)
-
             rageRunning = false
         end)
     end)
 end
 
 local function stopRagebot()
-    if rageConn then
-        rageConn:Disconnect()
-        rageConn = nil
-    end
+    if rageConn then rageConn:Disconnect(); rageConn = nil end
     rageCfg.enabled = false
     rageRunning     = false
 end
 
--- Ragebot UI
 RagebotTab:AddToggle("RagebotEnabled", {
     Text     = "Enable Ragebot",
     Default  = false,
-    Tooltip  = "Fires weapon bypassing walls",
     Risky    = true,
     Callback = function(val)
         rageCfg.enabled = val
-        if val then
-            startRagebot()
-            Library:Notify("Ragebot Active!", 2)
-        else
-            stopRagebot()
-            Library:Notify("Ragebot Off", 2)
-        end
+        if val then startRagebot(); Library:Notify("Ragebot Active!", 2)
+        else stopRagebot(); Library:Notify("Ragebot Off", 2) end
     end,
 })
 
 RagebotTab:AddToggle("ImprovedManip", {
     Text     = "Improved Manipulation",
     Default  = false,
-    Tooltip  = "Advanced 6-pass wall scan system",
+    Tooltip  = "6-pass wall scan system",
     Callback = function(val)
         rageCfg.improvedManip = val
         Library:Notify(
-            val
-            and "Improved Manipulation ON — 6 scan passes!"
-            or  "Standard Manipulation",
-            2
+            val and "Improved Manipulation ON!" or "Standard Mode", 2
         )
     end,
 })
 
 RagebotTab:AddDivider()
-RagebotTab:AddLabel("── Improved Manipulation Settings ──")
+RagebotTab:AddLabel("── Improved Manip Settings ──")
 
 RagebotTab:AddSlider("ImprovScanAngle", {
     Text     = "Scan Angle",
@@ -1463,7 +1594,6 @@ RagebotTab:AddSlider("ImprovScanAngle", {
     Max      = 90,
     Rounding = 0,
     Suffix   = "°",
-    Tooltip  = "Degrees offset for angle scan pass",
     Callback = function(val)
         rageCfg.improv.scanAngle = val
     end,
@@ -1472,293 +1602,436 @@ RagebotTab:AddSlider("ImprovScanAngle", {
 RagebotTab:AddToggle("ImprovMultiPass", {
     Text     = "Multi-Pass Angle Scan",
     Default  = true,
-    Tooltip  = "Scans multiple rotated angles",
-    Callback = function(val)
-        rageCfg.improv.multiPass = val
-    end,
+    Callback = function(val) rageCfg.improv.multiPass = val end,
 })
 
 RagebotTab:AddToggle("ImprovSpiral", {
     Text     = "Spiral Scan",
     Default  = false,
-    Tooltip  = "Spiral pattern scan around target",
-    Callback = function(val)
-        rageCfg.improv.spiralScan = val
-    end,
+    Callback = function(val) rageCfg.improv.spiralScan = val end,
 })
 
 RagebotTab:AddToggle("ImprovAdaptDist", {
     Text     = "Adaptive Distance",
     Default  = true,
-    Tooltip  = "Scale scan by distance to target",
-    Callback = function(val)
-        rageCfg.improv.adaptDist = val
-    end,
+    Callback = function(val) rageCfg.improv.adaptDist = val end,
 })
 
 RagebotTab:AddDivider()
-RagebotTab:AddLabel("── Vector Offsets (Y axis) ──")
-RagebotTab:AddLabel("These are the wall scan positions")
+RagebotTab:AddLabel("── Vector Y Offsets ──")
 
-RagebotTab:AddSlider("RGVec1Y", {
-    Text     = "Vector 1 Y",
-    Default  = 12,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Tooltip  = "Vector3.new(X, Y, Z) — Y offset 1",
-    Callback = function(val)
-        rageCfg.v1y = val
-        rebuildVectors()
-    end,
-})
+-- Vector Y sliders 1-8
+local vecYData = {
+    {key="v1y", default=12, label="Vector 1 Y"},
+    {key="v2y", default=16, label="Vector 2 Y"},
+    {key="v3y", default=20, label="Vector 3 Y"},
+    {key="v4y", default=24, label="Vector 4 Y"},
+    {key="v5y", default=28, label="Vector 5 Y"},
+    {key="v6y", default=32, label="Vector 6 Y"},
+    {key="v7y", default=36, label="Vector 7 Y"},
+    {key="v8y", default=40, label="Vector 8 Y"},
+}
 
-RagebotTab:AddSlider("RGVec2Y", {
-    Text     = "Vector 2 Y",
-    Default  = 16,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v2y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec3Y", {
-    Text     = "Vector 3 Y",
-    Default  = 20,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v3y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec4Y", {
-    Text     = "Vector 4 Y",
-    Default  = 24,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v4y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec5Y", {
-    Text     = "Vector 5 Y",
-    Default  = 28,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v5y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec6Y", {
-    Text     = "Vector 6 Y",
-    Default  = 32,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v6y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec7Y", {
-    Text     = "Vector 7 Y",
-    Default  = 36,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v7y = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec8Y", {
-    Text     = "Vector 8 Y",
-    Default  = 40,
-    Min      = -50,
-    Max      = 100,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v8y = val
-        rebuildVectors()
-    end,
-})
+for i, v in ipairs(vecYData) do
+    local key = v.key
+    RagebotTab:AddSlider("RGVec"..i.."Y", {
+        Text     = v.label,
+        Default  = v.default,
+        Min      = -50,
+        Max      = 100,
+        Rounding = 0,
+        Suffix   = " studs",
+        Callback = function(val)
+            rageCfg[key] = val
+            rebuildVectors()
+        end,
+    })
+end
 
 RagebotTab:AddDivider()
-RagebotTab:AddLabel("── Vector X Axis (Vectors 1-4) ──")
+RagebotTab:AddLabel("── Vector X Axis (1-4) ──")
 
-RagebotTab:AddSlider("RGVec1X", {
-    Text     = "Vector 1 X",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v1x = val
-        rebuildVectors()
-    end,
-})
+local vecXData = {
+    {key="v1x", label="Vector 1 X"},
+    {key="v2x", label="Vector 2 X"},
+    {key="v3x", label="Vector 3 X"},
+    {key="v4x", label="Vector 4 X"},
+}
 
-RagebotTab:AddSlider("RGVec2X", {
-    Text     = "Vector 2 X",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v2x = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec3X", {
-    Text     = "Vector 3 X",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v3x = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec4X", {
-    Text     = "Vector 4 X",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v4x = val
-        rebuildVectors()
-    end,
-})
+for i, v in ipairs(vecXData) do
+    local key = v.key
+    RagebotTab:AddSlider("RGVec"..i.."X", {
+        Text     = v.label,
+        Default  = 0,
+        Min      = -20,
+        Max      = 20,
+        Rounding = 0,
+        Suffix   = " studs",
+        Callback = function(val)
+            rageCfg[key] = val
+            rebuildVectors()
+        end,
+    })
+end
 
 RagebotTab:AddDivider()
-RagebotTab:AddLabel("── Vector Z Axis (Vectors 1-4) ──")
+RagebotTab:AddLabel("── Vector Z Axis (1-4) ──")
 
-RagebotTab:AddSlider("RGVec1Z", {
-    Text     = "Vector 1 Z",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v1z = val
-        rebuildVectors()
-    end,
-})
+local vecZData = {
+    {key="v1z", label="Vector 1 Z"},
+    {key="v2z", label="Vector 2 Z"},
+    {key="v3z", label="Vector 3 Z"},
+    {key="v4z", label="Vector 4 Z"},
+}
 
-RagebotTab:AddSlider("RGVec2Z", {
-    Text     = "Vector 2 Z",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v2z = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec3Z", {
-    Text     = "Vector 3 Z",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v3z = val
-        rebuildVectors()
-    end,
-})
-
-RagebotTab:AddSlider("RGVec4Z", {
-    Text     = "Vector 4 Z",
-    Default  = 0,
-    Min      = -20,
-    Max      = 20,
-    Rounding = 0,
-    Suffix   = " studs",
-    Callback = function(val)
-        rageCfg.v4z = val
-        rebuildVectors()
-    end,
-})
+for i, v in ipairs(vecZData) do
+    local key = v.key
+    RagebotTab:AddSlider("RGVec"..i.."Z", {
+        Text     = v.label,
+        Default  = 0,
+        Min      = -20,
+        Max      = 20,
+        Rounding = 0,
+        Suffix   = " studs",
+        Callback = function(val)
+            rageCfg[key] = val
+            rebuildVectors()
+        end,
+    })
+end
 
 RagebotTab:AddDivider()
 
 RagebotTab:AddButton({
     Text = "Reset All Vectors",
     Func = function()
-        rageCfg.v1y = 12; rageCfg.v2y = 16
-        rageCfg.v3y = 20; rageCfg.v4y = 24
-        rageCfg.v5y = 28; rageCfg.v6y = 32
-        rageCfg.v7y = 36; rageCfg.v8y = 40
-        rageCfg.v1x = 0;  rageCfg.v2x = 0
-        rageCfg.v3x = 0;  rageCfg.v4x = 0
-        rageCfg.v1z = 0;  rageCfg.v2z = 0
-        rageCfg.v3z = 0;  rageCfg.v4z = 0
+        rageCfg.v1y=12; rageCfg.v2y=16; rageCfg.v3y=20; rageCfg.v4y=24
+        rageCfg.v5y=28; rageCfg.v6y=32; rageCfg.v7y=36; rageCfg.v8y=40
+        rageCfg.v1x=0; rageCfg.v2x=0; rageCfg.v3x=0; rageCfg.v4x=0
+        rageCfg.v1z=0; rageCfg.v2z=0; rageCfg.v3z=0; rageCfg.v4z=0
         rebuildVectors()
-        Library:Notify("Vectors reset to defaults!", 2)
+        Library:Notify("Vectors reset!", 2)
     end,
 })
 
 RagebotTab:AddButton({
-    Text = "Print Current Vectors",
+    Text = "Print Vectors",
     Func = function()
-        print("=== Current Ragebot Vectors ===")
+        print("=== Ragebot Vectors ===")
         for i, v in ipairs(rageCfg.vectors) do
-            print(string.format(
-                "Vector %d: X=%.1f Y=%.1f Z=%.1f",
+            print(("Vec %d: X=%.1f Y=%.1f Z=%.1f"):format(
                 i, v.X, v.Y, v.Z
             ))
         end
-        Library:Notify(
-            "Vectors printed to console!", 2
-        )
+        Library:Notify("Printed to console!", 2)
     end,
 })
 
 RagebotTab:AddLabel(
-    "Improved Manipulation Passes:\n"..
-    "1. Direct LOS\n"..
-    "2. Standard vector offsets\n"..
-    "3. Multi-angle rotation scan\n"..
-    "4. Spiral pattern scan\n"..
-    "5. Side-step thin wall scan\n"..
-    "6. Adaptive distance scan",
+    "Passes:\n1. Direct LOS\n2. Standard offsets\n"..
+    "3. Multi-angle\n4. Spiral\n5. Side-step\n6. Adaptive",
     true
 )
+
+-- =============================================
+--   WALLBANG SYSTEM
+--   Ported from source wallbang script
+--   Uses Gun.StartShooting hook + desync
+--   No Player.Mouse
+-- =============================================
+
+local WB = {
+    enabled = false,
+    hitPart = "Head",
+}
+
+-- Wallbang state table (from source)
+local wbState = {}
+
+do
+    -- Ref the gun module for hooking
+    local __gunMod = GunModule
+    local __utilMod = util
+
+    -- Character accessors (safe)
+    local function wbGetRoot()
+        local c = lp.Character
+        return c and c:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function wbGetHead()
+        local c = lp.Character
+        return c and c:FindFirstChild("Head")
+    end
+
+    function wbState:init()
+        self.active           = false
+        self.target           = nil
+        self.desync           = false
+        self.conn1            = nil
+        self.conn2            = nil
+        self.conn3            = nil
+        self.task1            = nil
+        self.oldfunc          = nil
+        self.autoshootConn    = nil
+    end
+
+    function wbState:find()
+        local best, bestDist = nil, math.huge
+        for _, p in next, Players:GetPlayers() do
+            if p == lp then continue end
+            if p:GetAttribute("TeamID")
+                == lp:GetAttribute("TeamID") then
+                continue
+            end
+            local c = p.Character
+            if not c then continue end
+            local head = c:FindFirstChild("Head")
+            local hum  = c:FindFirstChildWhichIsA("Humanoid")
+            if not (head and hum and hum.Health > 0) then
+                continue
+            end
+            local dist = (
+                cam.CFrame.Position - head.Position
+            ).Magnitude
+            if dist < bestDist then
+                bestDist = dist
+                best     = p
+            end
+        end
+        return best
+    end
+
+    function wbState:getHitPart(char)
+        if WB.hitPart == "Head" then
+            return char:FindFirstChild("Head")
+        else
+            return char:FindFirstChild("UpperTorso")
+                or char:FindFirstChild("Torso")
+                or char:FindFirstChild("HumanoidRootPart")
+        end
+    end
+
+    function wbState:desyncStart(targetPlayer)
+        if self.conn2 then self.conn2:Disconnect() end
+        self.desync = true
+        self.conn2 = RunService.Heartbeat:Connect(function()
+            if not self.desync then return end
+            local root = wbGetRoot()
+            if not root then return end
+            local targetChar = targetPlayer.Character
+            if not targetChar then
+                self:desyncStop()
+                return
+            end
+            local head = targetChar:FindFirstChild("Head")
+            if not head then self:desyncStop(); return end
+
+            local savedCF  = root.CFrame
+            local savedLV  = root.AssemblyLinearVelocity
+            local savedAV  = root.AssemblyAngularVelocity
+
+            root.CFrame = head.CFrame * CFrame.new(0, -5, 0)
+
+            RunService:BindToRenderStep(
+                "__wbRestore", 101, function()
+                    pcall(function()
+                        root.CFrame                  = savedCF
+                        root.AssemblyLinearVelocity  = savedLV
+                        root.AssemblyAngularVelocity = savedAV
+                    end)
+                    RunService:UnbindFromRenderStep("__wbRestore")
+                end
+            )
+        end)
+    end
+
+    function wbState:desyncStop()
+        self.desync = false
+        if self.conn2 then
+            self.conn2:Disconnect()
+            self.conn2 = nil
+        end
+    end
+
+    function wbState:setup()
+        if self.conn1 then self.conn1:Disconnect() end
+        self.conn1 = RunService.Heartbeat:Connect(function()
+            if not self.active then return end
+            self.target = self:find()
+        end)
+
+        if not __gunMod then return end
+
+        local origSSFunc = __gunMod.StartShooting
+        self.oldfunc = origSSFunc
+
+        __gunMod.StartShooting = function(gunSelf, ...)
+            local results = {origSSFunc(gunSelf, ...)}
+
+            -- Only apply to local player's gun
+            if not gunSelf.ClientFighter
+                or not gunSelf.ClientFighter.IsLocalPlayer then
+                return table.unpack(results)
+            end
+
+            local shootData = results[3]
+            if not shootData
+                or typeof(shootData) ~= "table" then
+                return table.unpack(results)
+            end
+
+            results[4] = true
+
+            local tgPlayer = self.target
+            if not self.active
+                or not tgPlayer
+                or not tgPlayer.Character then
+                return table.unpack(results)
+            end
+
+            self:desyncStart(tgPlayer)
+
+            task.wait(0.1)
+
+            if self.task1 then
+                task.cancel(self.task1)
+                self.task1 = nil
+            end
+
+            local aimPart = self:getHitPart(
+                tgPlayer.Character
+            )
+            if not aimPart then
+                return table.unpack(results)
+            end
+
+            local targetPos = aimPart.Position
+            local targetCF  = aimPart.CFrame
+            local originPos = targetPos - Vector3.new(0, 3, 0)
+
+            -- Encode shoot data using Utility module
+            if __utilMod then
+                pcall(function()
+                    shootData[utf8.char(0)] = __utilMod:EncodeCFrame(
+                        CFrame.new(originPos, targetPos)
+                    )
+                    shootData[utf8.char(1)] = __utilMod:EncodeCFrame(
+                        CFrame.new(targetPos)
+                    )
+                    shootData[utf8.char(2)] = aimPart
+
+                    -- Random offset for natural feel
+                    local randOff = targetCF:ToObjectSpace(
+                        CFrame.new(targetPos + Vector3.new(
+                            math.random(-1, 1) * 0.5,
+                            math.random(-1, 1) * 0.5,
+                            math.random(-1, 1) * 0.5
+                        ))
+                    )
+                    shootData[utf8.char(3)] = __utilMod:EncodeCFrame(
+                        randOff
+                    )
+
+                    if shootData.Hitbox then
+                        shootData.Hitbox = WB.hitPart == "Head"
+                            and "Head"
+                            or  "Body"
+                    end
+                end)
+            end
+
+            self.task1 = task.delay(0.15, function()
+                self:desyncStop()
+            end)
+
+            return table.unpack(results)
+        end
+    end
+
+    function wbState:Start()
+        self.active = true
+        self:setup()
+        Library:Notify("Wallbang Active!", 2)
+    end
+
+    function wbState:Shutdown()
+        self.active = false
+
+        if self.autoshootConn then
+            self.autoshootConn:Disconnect()
+            self.autoshootConn = nil
+        end
+        if self.conn1 then self.conn1:Disconnect(); self.conn1 = nil end
+        if self.conn2 then self.conn2:Disconnect(); self.conn2 = nil end
+        if self.task1 then task.cancel(self.task1); self.task1 = nil end
+        if self.oldfunc and __gunMod then
+            __gunMod.StartShooting = self.oldfunc
+            self.oldfunc = nil
+        end
+        Library:Notify("Wallbang Off", 2)
+    end
+end
+
+wbState:init()
+
+-- Wallbang UI
+WallbangTab:AddToggle("WallbangEnabled", {
+    Text     = "Enable Wallbang",
+    Default  = false,
+    Tooltip  = "Hooks Gun.StartShooting + desync teleport",
+    Risky    = true,
+    Callback = function(val)
+        WB.enabled = val
+        if val then wbState:Start()
+        else wbState:Shutdown() end
+    end,
+})
+
+WallbangTab:AddDropdown("WallbangHitPart", {
+    Text     = "Hit Part",
+    Values   = {"Head", "Body"},
+    Default  = 1,
+    Multi    = false,
+    Tooltip  = "Which body part to wallbang",
+    Callback = function(val)
+        WB.hitPart       = val
+        Wallbang_HitPart = val
+    end,
+})
+
+WallbangTab:AddDivider()
+
+WallbangTab:AddLabel(
+    "How it works:\n\n"..
+    "1. Hooks Gun.StartShooting\n"..
+    "2. Finds closest enemy\n"..
+    "3. Desync teleports your HRP\n"..
+    "   near enemy head server-side\n"..
+    "4. Encodes fake shoot data\n"..
+    "   pointing directly at target\n"..
+    "5. Restores position via\n"..
+    "   RenderStepped bind\n\n"..
+    "Target detection:\n"..
+    "Finds closest enemy by\n"..
+    "camera distance — no FOV\n"..
+    "limit — shoots through walls",
+    true
+)
+
+WallbangTab:AddButton({
+    Text = "Force Find Target",
+    Func = function()
+        local tg = wbState:find()
+        if tg then
+            Library:Notify(
+                "Target: " .. tg.Name, 3
+            )
+        else
+            Library:Notify("No target found!", 2)
+        end
+    end,
+})
 
 -- =============================================
 --   HIT SOUND
@@ -1775,42 +2048,31 @@ local hitSoundConn = nil
 
 local function findViewModel()
     local result = nil
-
     local ok = pcall(function()
         local modules = lp.PlayerScripts
             :WaitForChild("Modules", 5)
         if not modules then return end
-
-        local clientClasses = modules
-            :WaitForChild("ClientReplicatedClasses", 5)
-        if not clientClasses then return end
-
-        local clientFighter = clientClasses
-            :WaitForChild("ClientFighter", 5)
-        if not clientFighter then return end
-
-        local clientItem = clientFighter
-            :WaitForChild("ClientItem", 5)
-        if not clientItem then return end
-
-        result = clientItem:WaitForChild(
-            "ClientViewModel", 5
+        local cc = modules:WaitForChild(
+            "ClientReplicatedClasses", 5
         )
+        if not cc then return end
+        local cf = cc:WaitForChild("ClientFighter", 5)
+        if not cf then return end
+        local ci = cf:WaitForChild("ClientItem", 5)
+        if not ci then return end
+        result = ci:WaitForChild("ClientViewModel", 5)
     end)
-
     if not ok or not result then
         pcall(function()
             for _, v in pairs(
                 lp.PlayerScripts:GetDescendants()
             ) do
                 if v.Name == "ClientViewModel" then
-                    result = v
-                    break
+                    result = v; break
                 end
             end
         end)
     end
-
     return result
 end
 
@@ -1819,17 +2081,12 @@ local function applyHitSound(soundId, volume, pitch)
         hitSoundConn:Disconnect()
         hitSoundConn = nil
     end
-
     task.spawn(function()
         local vm = findViewModel()
-
         if not vm then
-            Library:Notify(
-                "Hit Sound: ViewModel not found!", 3
-            )
+            Library:Notify("Hit Sound: VM not found!", 3)
             return
         end
-
         for _, v in pairs(vm:GetChildren()) do
             if v:IsA("Sound")
                 and v.SoundId ~= "rbxassetid://16537449730" then
@@ -1840,7 +2097,6 @@ local function applyHitSound(soundId, volume, pitch)
                 end)
             end
         end
-
         hitSoundConn = vm.ChildAdded:Connect(function(v)
             if not hitSoundCfg.enabled then return end
             if not v:IsA("Sound") then return end
@@ -1869,7 +2125,6 @@ end
 HitSoundTab:AddToggle("HitSoundEnabled", {
     Text     = "Enable Hit Sound",
     Default  = false,
-    Tooltip  = "Replaces weapon sounds",
     Callback = function(val)
         hitSoundCfg.enabled = val
         if val then
@@ -1892,7 +2147,6 @@ HitSoundTab:AddDropdown("HitSoundSelect", {
     Default    = 1,
     Multi      = false,
     Searchable = true,
-    Tooltip    = "Select hit sound",
     Callback   = function(val)
         hitSoundCfg.soundId = HIT_SOUNDS[val]
         if hitSoundCfg.enabled then
@@ -1953,7 +2207,6 @@ local CamRight = Tabs.Camera:AddRightGroupbox(
 )
 
 local fovChangerConn = nil
-
 CamLeft:AddToggle("FOVChangerEnabled", {
     Text     = "Enable FOV Changer",
     Default  = false,
@@ -1990,7 +2243,6 @@ CamLeft:AddSlider("FOVValue", {
     Min      = 30,
     Max      = 120,
     Rounding = 0,
-    Tooltip  = "Field of view",
     Callback = function(val)
         if Toggles.FOVChangerEnabled.Value then
             pcall(function()
@@ -2021,8 +2273,7 @@ CamLeft:AddToggle("NoShake", {
             )
         else
             if noShakeConn then
-                noShakeConn:Disconnect()
-                noShakeConn = nil
+                noShakeConn:Disconnect(); noShakeConn = nil
             end
             pcall(function()
                 if CameraController then
@@ -2053,8 +2304,7 @@ CamLeft:AddToggle("NoSway", {
             )
         else
             if noSwayConn then
-                noSwayConn:Disconnect()
-                noSwayConn = nil
+                noSwayConn:Disconnect(); noSwayConn = nil
             end
         end
     end,
@@ -2084,8 +2334,7 @@ CamLeft:AddToggle("NoBobbing", {
             )
         else
             if noBobConn then
-                noBobConn:Disconnect()
-                noBobConn = nil
+                noBobConn:Disconnect(); noBobConn = nil
             end
         end
     end,
@@ -2109,8 +2358,7 @@ CamLeft:AddToggle("NoJumpEffect", {
             )
         else
             if noJumpConn then
-                noJumpConn:Disconnect()
-                noJumpConn = nil
+                noJumpConn:Disconnect(); noJumpConn = nil
             end
         end
     end,
@@ -2136,8 +2384,7 @@ CamLeft:AddToggle("NoSlideTilt", {
             )
         else
             if noSlideConn then
-                noSlideConn:Disconnect()
-                noSlideConn = nil
+                noSlideConn:Disconnect(); noSlideConn = nil
             end
         end
     end,
@@ -2161,8 +2408,7 @@ CamLeft:AddToggle("ForceCrosshair", {
             )
         else
             if crosshairConn then
-                crosshairConn:Disconnect()
-                crosshairConn = nil
+                crosshairConn:Disconnect(); crosshairConn = nil
             end
             pcall(function()
                 if CameraController then
@@ -2199,10 +2445,7 @@ CamRight:AddToggle("SensOverride", {
                 end
             )
         else
-            if sensConn then
-                sensConn:Disconnect()
-                sensConn = nil
-            end
+            if sensConn then sensConn:Disconnect(); sensConn = nil end
             pcall(function()
                 if CameraController then
                     CameraController:_UpdateSettings()
@@ -2217,25 +2460,21 @@ CamRight:AddSlider("SensValue", {
     Min = 1, Max = 500, Rounding = 0, Suffix = "%",
     Callback = function(_) end,
 })
-
 CamRight:AddSlider("SensADS", {
     Text = "ADS Sensitivity", Default = 100,
     Min = 1, Max = 500, Rounding = 0, Suffix = "%",
     Callback = function(_) end,
 })
-
 CamRight:AddSlider("SensScoped", {
     Text = "Scoped Sensitivity", Default = 100,
     Min = 1, Max = 500, Rounding = 0, Suffix = "%",
     Callback = function(_) end,
 })
-
 CamRight:AddSlider("SensX", {
     Text = "Sensitivity X", Default = 100,
     Min = 1, Max = 500, Rounding = 0, Suffix = "%",
     Callback = function(_) end,
 })
-
 CamRight:AddSlider("SensY", {
     Text = "Sensitivity Y", Default = 100,
     Min = 1, Max = 500, Rounding = 0, Suffix = "%",
@@ -2267,8 +2506,7 @@ CamRight:AddToggle("ViewmodelEnabled", {
             )
         else
             if viewmodelConn then
-                viewmodelConn:Disconnect()
-                viewmodelConn = nil
+                viewmodelConn:Disconnect(); viewmodelConn = nil
             end
             pcall(function()
                 if CameraController then
@@ -2285,13 +2523,11 @@ CamRight:AddSlider("ViewmodelX", {
     Min = -5, Max = 5, Rounding = 1,
     Callback = function(val) vmCfg.x = val end,
 })
-
 CamRight:AddSlider("ViewmodelY", {
     Text = "Y Offset", Default = 0,
     Min = -5, Max = 5, Rounding = 1,
     Callback = function(val) vmCfg.y = val end,
 })
-
 CamRight:AddSlider("ViewmodelZ", {
     Text = "Z Offset", Default = 0,
     Min = -5, Max = 5, Rounding = 1,
@@ -2320,19 +2556,16 @@ LoadoutTab:AddDropdown("LoadoutPrimary", {
     Default = 1, Multi = false, Searchable = true,
     Callback = function(val) loadoutCfg.primary = val end,
 })
-
 LoadoutTab:AddDropdown("LoadoutSecondary", {
     Text = "Secondary", Values = SECONDARY_WEAPONS,
     Default = 1, Multi = false, Searchable = true,
     Callback = function(val) loadoutCfg.secondary = val end,
 })
-
 LoadoutTab:AddDropdown("LoadoutMelee", {
     Text = "Melee", Values = MELEE_WEAPONS,
     Default = 1, Multi = false, Searchable = true,
     Callback = function(val) loadoutCfg.melee = val end,
 })
-
 LoadoutTab:AddDropdown("LoadoutUtility", {
     Text = "Utility", Values = UTILITY_WEAPONS,
     Default = 1, Multi = false, Searchable = true,
@@ -2420,16 +2653,13 @@ MiscRight:AddToggle("AutoVote", {
     Callback = function(val)
         autoVoteActive = false
         task.wait(0.1)
-
         if val then
             autoVoteActive = true
             task.spawn(function()
                 autoVoteThread = coroutine.running()
                 while autoVoteActive do
                     pcall(function()
-                        VoteRemote:FireServer(
-                            Options.VoteMap.Value
-                        )
+                        VoteRemote:FireServer(Options.VoteMap.Value)
                     end)
                     local elapsed = 0
                     while elapsed < 2 and autoVoteActive do
@@ -2456,12 +2686,11 @@ local SkyboxRight = Tabs.Skybox:AddRightGroupbox("Info")
 local originalSkybox = nil
 local skyboxEnabled  = false
 
-local function getAtmosphere()
-    return ws.Terrain:FindFirstChildOfClass("Atmosphere")
-end
-
 local function getSky()
     return ws.Terrain:FindFirstChildOfClass("Sky")
+end
+local function getAtmo()
+    return ws.Terrain:FindFirstChildOfClass("Atmosphere")
 end
 
 local function saveSkybox()
@@ -2482,22 +2711,18 @@ local function applySkybox(name)
     local data = SKYBOXES[name]
     if not data then return end
     saveSkybox()
-
     local sky = getSky()
     if not sky then
-        sky        = Instance.new("Sky")
+        sky = Instance.new("Sky")
         sky.Parent = ws.Terrain
     end
-
     sky.SkyboxBk = data.SkyboxBk
     sky.SkyboxDn = data.SkyboxDn
     sky.SkyboxFt = data.SkyboxFt
     sky.SkyboxLf = data.SkyboxLf
     sky.SkyboxRt = data.SkyboxRt
     sky.SkyboxUp = data.SkyboxUp
-
-    local atmo = getAtmosphere()
-
+    local atmo = getAtmo()
     if data.isNight then
         Lighting.ClockTime = 0
         Lighting.Ambient   = Color3.fromRGB(30, 30, 60)
@@ -2580,12 +2805,7 @@ SkyboxLeft:AddButton({
 })
 
 SkyboxRight:AddLabel(
-    "Skybox Presets:\n\n"..
-    "Default — Original sky\n\n"..
-    "Night Sky — Dark night\n\n"..
-    "Bliss — Calm daylight\n\n"..
-    "Sunset — Warm orange\n\n"..
-    "Space — Black void",
+    "Default / Night / Bliss / Sunset / Space",
     true
 )
 
@@ -2625,18 +2845,20 @@ MenuGroup:AddButton({
     Text = "Unload",
     Func = function()
         -- Stop all features
-        AB.on           = false
+        AB.on = false
         rageCfg.enabled = false
+        WB.enabled = false
         stopRagebot()
         stopHitSound()
         unhookSilent()
+        wbState:Shutdown()
         autoVoteActive = false
 
         -- Remove drawings
-        pcall(function() fovCircle:Remove()    end)
-        pcall(function() fovHalf:Remove()      end)
+        pcall(function() fovCircle:Remove() end)
+        pcall(function() fovHalf:Remove() end)
         pcall(function() silentCircle:Remove() end)
-        pcall(function() abCirc:Remove()       end)
+        pcall(function() abCirc:Remove() end)
 
         -- Restore skybox
         restoreSkybox()
@@ -2644,16 +2866,14 @@ MenuGroup:AddButton({
         -- Disconnect all connections
         local conns = {
             fovChangerConn, noShakeConn, noSwayConn,
-            noBobConn,      noJumpConn,  noSlideConn,
-            crosshairConn,  sensConn,    viewmodelConn,
+            noBobConn, noJumpConn, noSlideConn,
+            crosshairConn, sensConn, viewmodelConn,
         }
         for _, c in pairs(conns) do
-            if c then
-                pcall(function() c:Disconnect() end)
-            end
+            if c then pcall(function() c:Disconnect() end) end
         end
 
-        -- Restore camera defaults
+        -- Restore camera
         pcall(function()
             if CameraController then
                 CameraController._base_fov             = 80
@@ -2666,6 +2886,11 @@ MenuGroup:AddButton({
             end
         end)
 
+        -- Restore wallbang desync
+        pcall(function()
+            RunService:UnbindFromRenderStep("__wbRestore")
+        end)
+
         Library:Unload()
     end,
 })
@@ -2674,8 +2899,8 @@ Library.ToggleKeybind = Options.MenuKeybind
 
 -- =============================================
 --   UNIFIED RenderStepped Loop
---   Handles: Aimbot, FOV Circles,
---            Silent Circle, Watermark
+--   Aimbot + FOV Circles + Silent Circle
+--   + Watermark — all in ONE loop
 -- =============================================
 
 local frameTimer = tick()
@@ -2685,9 +2910,7 @@ local currentFPS = 60
 RunService.RenderStepped:Connect(function(dt)
     cam = ws.CurrentCamera
 
-    -- ==================
-    --   FPS + Watermark
-    -- ==================
+    -- FPS + Watermark
     frameCount += 1
     if tick() - frameTimer >= 1 then
         currentFPS = frameCount
@@ -2702,13 +2925,12 @@ RunService.RenderStepped:Connect(function(dt)
                 .ServerStatsItem["Data Ping"]:GetValue()
         )
     end)
-
     Library:SetWatermark(
         ("Rivals | %d fps | %d ms"):format(currentFPS, ping)
     )
 
     -- ==================
-    --   Aimbot (v3 logic)
+    --   Aimbot (v3)
     -- ==================
     if AB.on and CameraController then
         if abDoReact then
@@ -2739,7 +2961,6 @@ RunService.RenderStepped:Connect(function(dt)
 
             if abTgt then
                 abLockT = abLockT + dt
-
                 if abLockT > AB.maxLock then
                     abTgt           = nil
                     abLockT         = 0
@@ -2790,15 +3011,17 @@ RunService.RenderStepped:Connect(function(dt)
 
     -- ==================
     --   Aimbot FOV Circle
+    --   No Player.Mouse
     -- ==================
     if not fovCfg.visible then
         fovCircle.Visible = false
         fovHalf.Visible   = false
         abCirc.Visible    = false
     else
+        -- getMousePos() = UserInputService:GetMouseLocation()
         local center = fovCfg.useCenter
             and scr()
-            or UserInputService:GetMouseLocation()
+            or getMousePos()
 
         fovCircle.Visible  = true
         fovCircle.Color    = fovCfg.color
@@ -2830,15 +3053,14 @@ RunService.RenderStepped:Connect(function(dt)
             fovHalf.Visible = false
         end
 
-        -- Sync abCirc with FOV circle
         abCirc.Position = center
         abCirc.Radius   = abEffFov()
         abCirc.Visible  = AB.on and AB.drawFov
     end
 
     -- ==================
-    --   Silent Aim Circle
-    --   (own FOV + colors)
+    --   Silent FOV Circle
+    --   Own colors + No Mouse
     -- ==================
     if not silentCfg.enabled
         or not silentCfg.circleVisible then
@@ -2850,7 +3072,7 @@ RunService.RenderStepped:Connect(function(dt)
 
         local center = silentCfg.useCenter
             and scr()
-            or UserInputService:GetMouseLocation()
+            or getMousePos()
 
         silentCircle.Position = center
 
@@ -2862,7 +3084,6 @@ RunService.RenderStepped:Connect(function(dt)
 
         local target = getSilentTarget(orig)
 
-        -- Color changes based on whether target is detected
         silentCircle.Color = target
             and silentCfg.targetColor
             or  silentCfg.circleColor
@@ -2870,10 +3091,7 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 Library:SetWatermarkVisibility(true)
-
-Library:OnUnload(function()
-    Library.Unloaded = true
-end)
+Library:OnUnload(function() Library.Unloaded = true end)
 
 -- =============================================
 --   Save / Theme
@@ -2881,16 +3099,12 @@ end)
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
-
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
-
 ThemeManager:SetFolder("RivalsScript")
 SaveManager:SetFolder("RivalsScript/Rivals")
-
 SaveManager:BuildConfigSection(Tabs.UISettings)
 ThemeManager:ApplyToTab(Tabs.UISettings)
-
 SaveManager:LoadAutoloadConfig()
 
 -- =============================================
@@ -2898,5 +3112,11 @@ SaveManager:LoadAutoloadConfig()
 -- =============================================
 
 Library:Notify(
-    "Rivals Script v1.3 Loaded! RightShift to toggle.", 5
+    "Rivals Script v1.4 | AC Bypass Active | RightShift to toggle",
+    6
 )
+
+print("[v1.4] AC Bypass: 8 layers active")
+print("[v1.4] No Player.Mouse — using UserInputService")
+print("[v1.4] Wallbang: Gun.StartShooting hook + desync")
+print("[v1.4] Ragebot: 6-pass improved manipulation")
