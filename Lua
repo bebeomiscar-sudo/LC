@@ -1,2645 +1,680 @@
 -- =============================================
---   Rivals Script v2.4.1
---   + ReplicateUnreliable fix
---   + Nil guard on all module calls
---   + safeInitRivals validation
---   + buildShotData nil safe
---   + safeFireShot nil safe
---   + All previous features intact
+--   Rivals Script v2.4 (Mobile-Fixed)
+--   + Ragebot Engine (Instance)
+--   + ESP (Players + Dummies)
+--   + Anti-Cheat Bypass (Safe)
+--   + Auto-Rejoin
+--   + Device Spoofer (Mobile-safe)
+--   + Fast Cooldowns
 -- =============================================
 
 -- =============================================
---   ANTI-CHEAT BYPASS — Runs FIRST
+--   MOBILE COMPATIBILITY CHECK
 -- =============================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-pcall(function()
-    loadstring([[ function LPH_NO_VIRTUALIZE(f) return f end ]])()
-end)
-
-local cloneref    = cloneref    or function(obj) return obj end
-local newcclosure = newcclosure or function(f) return f end
-
-local _acPlayers     = cloneref(game:GetService("Players"))
-local _acLocalPlayer = _acPlayers.LocalPlayer
-while not _acLocalPlayer do
-    task.wait()
-    _acLocalPlayer = _acPlayers.LocalPlayer
+-- Check critical functions
+local missing = {}
+local required = {
+    "hookfunction", "getconnections", "newcclosure", "getgc", "getgenv", "setfpscap"
+}
+for _, fn in ipairs(required) do
+    if not _G[fn] then table.insert(missing, fn) end
 end
 
-local earlyConnections = {}
+if #missing > 0 then
+    warn("[Rivals] Missing functions: " .. table.concat(missing, ", "))
+    warn("[Rivals] Your executor may not fully support this script.")
+end
+
+-- Safe replacements for missing functions
+local hookfunction = hookfunction or function(old, new) return old end
+local newcclosure = newcclosure or function(f) return f end
+
+-- =============================================
+--   ANTI-CHEAT BYPASS (Mobile-safe)
+-- =============================================
 
 task.spawn(function()
-    task.wait(1.0)
-    print("[ac.lua] Running anticheat bypass...")
-    local success, err = pcall(function()
-        assert(getgc,                "missing getgc")
-        assert(debug and debug.info, "missing debug.info")
-        assert(hookfunction,         "missing hookfunction")
-        assert(getconnections,       "missing getconnections")
-        assert(newcclosure,          "missing newcclosure")
+    task.wait(2.0)
+    print("[ac.lua] Running mobile-safe bypass...")
 
-        local RS           = game:GetService("ReplicatedStorage")
-        local LogService   = game:GetService("LogService")
-        local ScriptContext = game:GetService("ScriptContext")
-
-        task.spawn(LPH_NO_VIRTUALIZE(function()
-            local hooked = 0
-            for _, v in pairs(getgc(true)) do
-                if typeof(v) == "function" then
-                    local ok, src = pcall(debug.info, v, "s")
-                    if ok and type(src) == "string"
-                        and src:find("AnalyticsPipelineController")
-                    then
-                        hooked += 1
-                        hookfunction(v, newcclosure(function(...) return wait(9e9) end))
-                    end
-                end
-            end
-            print("[ac.lua] Hung " .. hooked .. " AnalyticsPipeline functions")
-        end))
-
-        task.spawn(function()
-            local ok, remote = pcall(function()
-                return RS:WaitForChild("Remotes", 10)
-                         :WaitForChild("AnalyticsPipeline", 10)
-                         :WaitForChild("RemoteEvent", 10)
-            end)
-            if ok and remote and remote.OnClientEvent then
-                local hooked = 0
-                for _, conn in pairs(getconnections(remote.OnClientEvent)) do
-                    if conn and conn.Function then
-                        if pcall(hookfunction, conn.Function, newcclosure(function() end)) then
-                            hooked += 1
-                        end
-                    end
-                end
-                print("[ac.lua] Hooked " .. hooked .. " anticheat remote connections")
-            end
-        end)
-
-        task.spawn(function()
-            local hooked = 0
+    local success = pcall(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local lp = game:GetService("Players").LocalPlayer
+        
+        -- 1. Basic Hook protection (safe wrapper)
+        if hookfunction and getconnections then
+            local LogService = game:GetService("LogService")
             for _, conn in pairs(getconnections(LogService.MessageOut)) do
                 if conn and conn.Function then
-                    if pcall(hookfunction, conn.Function, newcclosure(function() end)) then
-                        hooked += 1
+                    pcall(function()
+                        hookfunction(conn.Function, newcclosure(function() end))
+                    end)
+                end
+            end
+            print("[ac.lua] Silenced LogService.")
+        end
+
+        -- 2. RemoteEvent silence (safe)
+        local remote = ReplicatedStorage:FindFirstChild("Remotes")
+        if remote then
+            local analytics = remote:FindFirstChild("AnalyticsPipeline")
+            if analytics then
+                local ev = analytics:FindFirstChild("RemoteEvent")
+                if ev and ev.OnClientEvent then
+                    pcall(function()
+                        ev.OnClientEvent:Connect(function() end)
+                    end)
+                end
+            end
+            -- Also block Fighter ReplicateUnreliable errors
+            local rep = remote:FindFirstChild("Replication")
+            if rep then
+                local fighter = rep:FindFirstChild("Fighter")
+                if fighter then
+                    local unreliable = fighter:FindFirstChild("ReplicateUnreliable")
+                    if unreliable and unreliable.OnClientEvent then
+                        pcall(function()
+                            unreliable.OnClientEvent:Connect(function() end)
+                        end)
                     end
                 end
-            end
-            print("[ac.lua] Silenced " .. hooked .. " LogService.MessageOut connections")
-        end)
-
-        task.spawn(function()
-            local hooked = 0
-            for _, conn in pairs(getconnections(ScriptContext.Error)) do
-                if pcall(conn.Disable, conn) then hooked += 1 end
-            end
-            print("[ac.lua] Disabled " .. hooked .. " ScriptContext.Error connections")
-            pcall(hookfunction, ScriptContext.Error.Connect, newcclosure(function() return nil end))
-        end)
-
-        task.spawn(function()
-            local KickNames = {"Kick", "kick"}
-            for _, name in ipairs(KickNames) do
-                local fn = _acLocalPlayer[name]
-                if type(fn) == "function" then
-                    local oldkick
-                    oldkick = hookfunction(fn, newcclosure(function(self, ...)
-                        if self == _acLocalPlayer then return end
-                        return oldkick(self, ...)
-                    end))
-                end
-            end
-        end)
-    end)
-
-    if success then
-        print("[ac.lua] Anticheat bypass applied successfully.")
-        pcall(function()
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "ac.lua", Text = "Anticheat disabled!", Duration = 4,
-            })
-        end)
-    else
-        warn("[ac.lua] Bypass error: " .. tostring(err))
-    end
-end)
-
-task.spawn(function()
-    task.wait(1.5)
-    pcall(function()
-        local RS = game:GetService("ReplicatedStorage")
-        local CS = game:GetService("CollectionService")
-
-        local function patchTable(tbl)
-            if type(tbl) ~= "table" then return end
-            if rawget(tbl, "IsWithinOOBPart") or rawget(tbl, "OOB_DEFAULT_WARN_DELAY") then
-                tbl.IsWithinOOBPart        = function() return nil end
-                tbl.GetOOBWarnDelay        = function() return math.huge end
-                tbl.GetOOBKillDelay        = function() return math.huge end
-                tbl.OOB_DEFAULT_WARN_DELAY  = math.huge
-                tbl.OOB_DEFAULT_KILL_DELAY  = math.huge
-                if rawget(tbl, "GetSpread") and not rawget(tbl, "_patchedSpread") then
-                    local oldGetSpread = tbl.GetSpread
-                    tbl.GetSpread = function(self, ...) return CFrame.identity end
-                    tbl._patchedSpread = true
-                end
-            end
-            if rawget(tbl, "IsWithinTaggedParts") and not rawget(tbl, "_patchedOOB") then
-                local orig = tbl.IsWithinTaggedParts
-                tbl.IsWithinTaggedParts = function(self, tag, ...)
-                    if tag == "OutOfBoundsPart"     then return {} end
-                    if tag == "OutOfBoundsSafePart" then return true end
-                    return orig(self, tag, ...)
-                end
-                tbl._patchedOOB = true
-            end
-            if rawget(tbl, "IsOutOfBounds") and rawget(tbl, "_CheckKill") then
-                tbl.IsOutOfBounds = function() return nil end
-                tbl.Update        = function() end
-                tbl._CheckKill    = function() return false end
             end
         end
 
-        pcall(function() patchTable(require(RS.Modules.Utility)) end)
-        pcall(function() patchTable(require(RS.Modules.GameplayUtility)) end)
-        pcall(function()
-            local m = RS.Modules:FindFirstChild("OutOfBoundsMachine")
-            if m then patchTable(require(m)) end
-        end)
-        pcall(function()
-            for _, p in pairs(CS:GetTagged("OutOfBoundsPart")) do CS:RemoveTag(p, "OutOfBoundsPart") end
-            for _, p in pairs(CS:GetTagged("OutOfBoundsSafePart")) do CS:RemoveTag(p, "OutOfBoundsSafePart") end
-            table.insert(earlyConnections, CS:GetInstanceAddedSignal("OutOfBoundsPart"):Connect(function(p)
-                pcall(CS.RemoveTag, CS, p, "OutOfBoundsPart")
-            end))
-            table.insert(earlyConnections, CS:GetInstanceAddedSignal("OutOfBoundsSafePart"):Connect(function(p)
-                pcall(CS.RemoveTag, CS, p, "OutOfBoundsSafePart")
-            end))
-        end)
-        print("[ac.lua] OOB patches applied.")
+        -- 3. Block kick (safe)
+        if lp and lp.Kick then
+            local oldKick = lp.Kick
+            lp.Kick = newcclosure(function(self, ...)
+                return nil
+            end)
+        end
+
+        print("[ac.lua] Mobile bypass applied.")
     end)
-end)
 
-local originalSetMetatable = nil
-pcall(function()
-    if typeof(hookfunction) ~= "function" or typeof(getrenv) ~= "function" then return end
-    local renv = getrenv()
-    if not renv or not renv.setmetatable then return end
-    originalSetMetatable = hookfunction(renv.setmetatable, newcclosure(function(targetTable, metaTable)
-        local resTable, resMeta, spoofed = nil, nil, false
+    if success then
         pcall(function()
-            if metaTable and type(metaTable) == "table" and rawget(metaTable, "__mode") then
-                local weakMode = rawget(metaTable, "__mode")
-                if weakMode == "kv" or weakMode == "v" or weakMode == "k" then
-                    local st = debug.traceback()
-                    if st:find("MiscellaneousController") or st:find("LocalScript3")
-                        or st:find("CameraSecurity") or st:find("AnalyticsPipelineController")
-                    then
-                        resTable, resMeta = {1,2,3}, {}
-                        spoofed = true
-                    end
-                end
-            end
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Rivals Hub",
+                Text = "Mobile bypass active!",
+                Duration = 3
+            })
         end)
-        if spoofed then return originalSetMetatable(resTable, resMeta) end
-        return originalSetMetatable(targetTable, metaTable)
-    end))
-    print("[ac.lua] setmetatable spoof applied.")
-end)
-
-local originalKick = nil
-pcall(function() originalKick = _acLocalPlayer.Kick end)
-pcall(function()
-    if typeof(hookfunction) ~= "function" or not originalKick then return end
-    hookfunction(originalKick, newcclosure(function(plr, ...)
-        if plr == _acLocalPlayer then return nil end
-        local ok, res = pcall(originalKick, plr, ...)
-        if ok then return res end
-        return nil
-    end))
-    print("[ac.lua] Kick hook applied.")
-end)
-
--- =============================================
---   FIX 1: ReplicateUnreliable handler
---   Prevents "discarded event" console error
--- =============================================
-
-task.spawn(function()
-    local ok, remote = pcall(function()
-        return game:GetService("ReplicatedStorage")
-            :WaitForChild("Remotes", 10)
-            :WaitForChild("Replication", 10)
-            :WaitForChild("Fighter", 10)
-            :WaitForChild("ReplicateUnreliable", 10)
-    end)
-    if not ok or not remote then
-        warn("[Fix1] ReplicateUnreliable remote not found")
-        return
+    else
+        warn("[ac.lua] Bypass failed – some features may not work.")
     end
-    -- ✅ Register empty handler — stops Roblox discarding events
-    local conn = remote.OnClientEvent:Connect(function(...)
-        -- Silent: prevents "discarded event" error
-        -- Events are received but intentionally ignored
-    end)
-    if not getgenv().__rivalsFix then getgenv().__rivalsFix = {} end
-    table.insert(getgenv().__rivalsFix, conn)
-    print("[Fix1] ReplicateUnreliable OnClientEvent registered ✅")
 end)
 
 -- =============================================
---   AUTO REJOIN
+--   AUTO REJOIN (Safe)
 -- =============================================
 
-task.wait(10)
-
-local _rjPlayers         = game:GetService("Players")
-local _rjTeleportService = game:GetService("TeleportService")
-local _rjLocalPlayer     = _rjPlayers.LocalPlayer
-local _rjPlaceId         = game.PlaceId
-local _rjJobId           = game.JobId
-local _rjDidRejoin       = false
+task.wait(8)
+local rjPlayer = game:GetService("Players").LocalPlayer
+local rjTeleport = game:GetService("TeleportService")
+local rjPlaceId = game.PlaceId
+local rjJobId = game.JobId
+local rjDidRejoin = false
 
 local function rejoin()
-    if _rjDidRejoin then return end
-    _rjDidRejoin = true
-    print("[Rejoin] Rejoining...")
+    if rjDidRejoin then return end
+    rjDidRejoin = true
     task.spawn(function()
-        task.wait(0.05)
+        task.wait(0.1)
         pcall(function()
-            _rjTeleportService:TeleportToPlaceInstance(_rjPlaceId, _rjJobId, _rjLocalPlayer)
+            rjTeleport:TeleportToPlaceInstance(rjPlaceId, rjJobId, rjPlayer)
         end)
     end)
 end
 
-_rjLocalPlayer.AncestryChanged:Connect(function(_, parent)
+rjPlayer.AncestryChanged:Connect(function(_, parent)
     if not parent then rejoin() end
 end)
-_rjPlayers.PlayerRemoving:Connect(function(plr)
-    if plr == _rjLocalPlayer then rejoin() end
-end)
+
 game:GetService("RunService").Heartbeat:Connect(function()
-    if not _rjLocalPlayer.Parent
-        or not _rjLocalPlayer.Character
-        or game:GetService("CoreGui"):FindFirstChild("RobloxKickScreen")
-    then rejoin() end
+    if not rjPlayer or not rjPlayer.Parent then rejoin() end
 end)
+
 game:GetService("GuiService").ErrorMessageChanged:Connect(function(msg)
-    if msg then
-        local low = msg:lower()
-        if low:find("kick") or low:find("ban") or low:find("disconnect") then rejoin() end
-    end
+    if msg and (msg:lower():find("kick") or msg:lower():find("ban")) then rejoin() end
 end)
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if not _rjLocalPlayer or not _rjLocalPlayer.Parent then rejoin();break end
-    end
-end)
+
 print("[Rejoin] Loaded.")
 
 -- =============================================
---   Services
+--   SERVICES
 -- =============================================
 
-local Players           = cloneref(game:GetService("Players"))
-local RunService        = cloneref(game:GetService("RunService"))
-local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
-local UserInputService  = cloneref(game:GetService("UserInputService"))
-local Stats             = cloneref(game:GetService("Stats"))
-local Lighting          = cloneref(game:GetService("Lighting"))
-local ws                = cloneref(game:GetService("Workspace"))
-local lp               = Players.LocalPlayer
-local cam              = ws.CurrentCamera
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
+local ws = game:GetService("Workspace")
+local lp = Players.LocalPlayer
+local cam = ws.CurrentCamera
 
 -- =============================================
---   CONNECTION REGISTRY
+--   MOBILE LOADING NOTICE
 -- =============================================
 
-local _connections = {}
-local function trackConn(c)
-    table.insert(_connections, c)
-    return c
-end
+local notice = Instance.new("ScreenGui")
+notice.Name = "RivalsNotice"
+notice.ResetOnSpawn = false
+notice.IgnoreGuiInset = true
+notice.Parent = lp:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(300, 44)
+frame.Position = UDim2.new(0.5, -150, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
+frame.Parent = notice
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -10, 1, 0)
+label.Position = UDim2.new(0, 5, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = "Rivals v2.4 (Mobile) — Loading..."
+label.TextColor3 = Color3.fromRGB(180, 180, 255)
+label.TextSize = 12
+label.Font = Enum.Font.GothamBold
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = frame
 
 -- =============================================
---   FIX 2: Global nil guard helpers
---   Used everywhere modules might be nil
+--   CORE MODULES (Safe require)
 -- =============================================
 
-local function instanceSafeRequire(path)
-    if not path then return nil end
+local function safeRequire(path)
     local ok, r = pcall(require, path)
     return ok and r or nil
 end
 
--- ✅ Safe EncodeCFrame — never crashes on nil util
-local function safeEncodeCFrame(utilModule, cf)
-    if not utilModule then
-        warn("[NilGuard] utility module nil — EncodeCFrame skipped")
-        return CFrame.identity
-    end
-    if type(utilModule.EncodeCFrame) ~= "function" then
-        warn("[NilGuard] EncodeCFrame not a function")
-        return CFrame.identity
-    end
-    local ok, result = pcall(utilModule.EncodeCFrame, utilModule, cf)
-    if not ok then
-        warn("[NilGuard] EncodeCFrame failed: " .. tostring(result))
-        return CFrame.identity
-    end
-    return result
+local CameraController = safeRequire(lp.PlayerScripts:WaitForChild("Controllers", 5):WaitForChild("CameraController", 5))
+local FighterController = safeRequire(lp.PlayerScripts:WaitForChild("Controllers", 5):WaitForChild("FighterController", 5))
+local util = safeRequire(ReplicatedStorage:WaitForChild("Modules", 5):WaitForChild("Utility", 5))
+local enums = safeRequire(ReplicatedStorage:WaitForChild("Modules", 5):WaitForChild("EnumLibrary", 5))
+
+-- =============================================
+--   HELPER FUNCTIONS
+-- =============================================
+
+local function scr()
+    return Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 end
 
--- ✅ Safe ToEnum — never crashes on nil enums
-local function safeToEnum(enumsModule, enumName)
-    if not enumsModule then
-        warn("[NilGuard] enums module nil — ToEnum skipped")
-        return nil
-    end
-    if type(enumsModule.ToEnum) ~= "function" then
-        warn("[NilGuard] ToEnum not a function")
-        return nil
-    end
-    local ok, result = pcall(enumsModule.ToEnum, enumsModule, enumName)
-    if not ok then
-        warn("[NilGuard] ToEnum failed: " .. tostring(result))
-        return nil
-    end
-    return result
+local function getMouse()
+    return UserInputService:GetMouseLocation()
 end
 
--- ✅ Safe build shot data — returns nil if any part is missing
-local function buildShotData(utilModule, shootPos, targetPos, hitPart)
-    if not utilModule then
-        warn("[buildShotData] utility module is nil")
-        return nil
-    end
-    if type(utilModule.EncodeCFrame) ~= "function" then
-        warn("[buildShotData] EncodeCFrame is not a function")
-        return nil
-    end
-    if not hitPart or not hitPart.Parent then
-        warn("[buildShotData] hitPart is nil or destroyed")
-        return nil
-    end
-    if typeof(shootPos) ~= "Vector3" or typeof(targetPos) ~= "Vector3" then
-        warn("[buildShotData] invalid positions")
-        return nil
-    end
-
-    local cf1 = safeEncodeCFrame(utilModule, CFrame.new(shootPos, targetPos))
-    local cf2 = safeEncodeCFrame(utilModule, CFrame.new(shootPos, targetPos))
-    local rel = safeEncodeCFrame(utilModule, CFrame.new(0.43, 0.25, 0.42))
-
-    return {
-        [utf8.char(1)] = {
-            [utf8.char(0)] = cf1,
-            [utf8.char(1)] = cf2,
-            [utf8.char(2)] = hitPart,
-            [utf8.char(3)] = rel,
-        }
-    }
+local function inFov(part, fovSize)
+    if not part then return false end
+    local sp, on = cam:WorldToViewportPoint(part.Position)
+    if not on then return false end
+    return (Vector2.new(sp.X, sp.Y) - scr()).Magnitude <= fovSize
 end
 
--- ✅ Safe FireServer — nil checks before every fire
-local function safeFireShot(remote, enumsModule, objectId, data)
-    if not remote then
-        warn("[safeFireShot] UseItemRemote is nil")
-        return false
-    end
-    if not objectId then
-        warn("[safeFireShot] objectId is nil")
-        return false
-    end
-    if not data then
-        warn("[safeFireShot] shot data is nil")
-        return false
-    end
-    local enumVal = safeToEnum(enumsModule, "StartShooting")
-    if not enumVal then
-        warn("[safeFireShot] StartShooting enum is nil")
-        return false
-    end
-    local ok, err = pcall(function()
-        remote:FireServer(objectId, enumVal, data, nil)
-    end)
-    if not ok then
-        warn("[safeFireShot] FireServer failed: " .. tostring(err))
-        return false
-    end
+local function isVis(orig, part)
+    if not part then return false end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {lp.Character, part.Parent}
+    local result = ws:Raycast(orig, (part.Position - orig).Unit * 2000, params)
+    return result == nil or result.Instance:IsDescendantOf(part.Parent)
+end
+
+local function isValidTarget(p)
+    if not p or p == lp then return false end
+    local char = p.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
     return true
 end
 
-print("[Fix2] Nil guard helpers loaded ✅")
-
 -- =============================================
---   HTTP RETRY
+--   RAGEBOT (Simplified for mobile)
 -- =============================================
 
-local function httpGetRetry(url, retries, delay)
-    retries = retries or 8
-    delay   = delay   or 3
-    for attempt = 1, retries do
-        local ok, res = pcall(function() return game:HttpGet(url) end)
-        if ok and res and #res > 10 then return res end
-        warn(("[Rivals] HTTP attempt %d/%d failed"):format(attempt, retries))
-        task.wait(delay)
-        delay = math.min(delay + 1, 8)
-    end
-    return nil
+local rConfig = {
+    target = { enabled = false, character = nil, auto = false, autoshoot = false, hitpart = "Head" },
+    prediction = { enabled = false, multiplier = 1.2, velocity = Vector3.zero, lastposition = nil, lasttime = 0 },
+    state = { csyncactive = false },
+    orbit = { active = false, connection = nil, speed = 9000, height = 1, radius = 0 },
+    voidspam = { enabled = false, phase = "shoot", lastswitch = 0, currentduration = 0 },
+}
+local rPerf = { lastAttackTick = 0 }
+local rlocalfighter = FighterController and FighterController.LocalFighter
+local rOldPos = nil
+
+-- Weapon helpers
+local function rGetWeapon()
+    if not rlocalfighter or not rlocalfighter.EquippedItem then return nil end
+    return rlocalfighter.EquippedItem:Get("Name")
 end
 
--- =============================================
---   LOADING NOTICE
--- =============================================
+local function rGetAmmo()
+    if not rlocalfighter or not rlocalfighter.EquippedItem then return 0, 0, false end
+    local current = rlocalfighter.EquippedItem:Get("CurrentAmmo") or 0
+    local max = rlocalfighter.EquippedItem:Get("MaxAmmo") or 0
+    return current, max, false
+end
 
-local _noticeGui = nil
-task.spawn(function()
-    local pg = lp:WaitForChild("PlayerGui", 10)
-    if not pg then return end
-    local sg = Instance.new("ScreenGui")
-    sg.Name="RivalsLoad";sg.ResetOnSpawn=false
-    sg.IgnoreGuiInset=true;sg.DisplayOrder=999;sg.Parent=pg
-    local f = Instance.new("Frame", sg)
-    f.Size=UDim2.fromOffset(320,44);f.AnchorPoint=Vector2.new(0.5,0)
-    f.Position=UDim2.new(0.5,0,0,8)
-    f.BackgroundColor3=Color3.fromRGB(14,14,20);f.BorderSizePixel=0
-    Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-    local st=Instance.new("UIStroke",f);st.Color=Color3.fromRGB(100,80,255);st.Thickness=1.5
-    local lb=Instance.new("TextLabel",f)
-    lb.Size=UDim2.new(1,-10,1,0);lb.Position=UDim2.new(0,5,0,0)
-    lb.BackgroundTransparency=1;lb.TextColor3=Color3.fromRGB(180,180,255)
-    lb.TextSize=13;lb.Font=Enum.Font.GothamBold
-    lb.Text="⚔️ Rivals v2.4.1 — Loading..."
-    lb.TextXAlignment=Enum.TextXAlignment.Left
-    _noticeGui = sg
-end)
+local function rValid(char)
+    if not char or not char.Parent then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:FindFirstChild("HumanoidRootPart") then return false end
+    return true
+end
 
--- =============================================
---   LIBRARY LOAD
--- =============================================
-
-local Library    = nil
-local _libLoaded = false
-
--- ✅ FIX 3: safeInitRivals — validates Library before running
-local function safeInitRivals()
-    if not Library then
-        warn("[Fix3] Library is nil — cannot init")
-        return
-    end
-    if type(Library) ~= "table" then
-        warn("[Fix3] Library is not a table")
-        return
-    end
-    if type(Library.Window) ~= "function" then
-        warn("[Fix3] Library.Window is nil — wrong library?")
-        return
-    end
-    print("[Fix3] Library validated ✅ — running initRivals")
-    local ok, err = pcall(initRivals)
-    if not ok then
-        warn("[Fix3] initRivals crashed: " .. tostring(err))
-        -- Show error in notice GUI
-        if _noticeGui then
-            local fr = _noticeGui:FindFirstChildWhichIsA("Frame")
-            local lb = fr and fr:FindFirstChildWhichIsA("TextLabel")
-            if lb then
-                lb.Text = "❌ initRivals error — check console"
-                lb.TextColor3 = Color3.fromRGB(255,100,100)
+local function rNearest()
+    local mousePos = getMouse()
+    local best, bestDist = nil, 200
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= lp and isValidTarget(p) then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local sp, on = cam:WorldToViewportPoint(root.Position)
+                if on then
+                    local d = (Vector2.new(sp.X, sp.Y) - mousePos).Magnitude
+                    if d < bestDist then bestDist = d; best = p.Character end
+                end
             end
-            task.delay(8, function() pcall(function() _noticeGui:Destroy() end) end)
         end
+    end
+    return best
+end
+
+local function rHitpart(char, partname)
+    if not char then return nil end
+    return char:FindFirstChild(partname) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function rPredict(hitpart, origin)
+    if not rConfig.prediction.enabled then return hitpart and hitpart.Position or Vector3.zero end
+    local base = hitpart.Position
+    local dist = (base - origin).Magnitude
+    local ping = 0
+    pcall(function() ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
+    return base + (rConfig.prediction.velocity * (dist / 3000 + ping) * rConfig.prediction.multiplier)
+end
+
+local function rUpdateVel()
+    if not rConfig.target.character or not rConfig.prediction.enabled then
+        rConfig.prediction.velocity = Vector3.zero
+        return
+    end
+    local root = rConfig.target.character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local now = tick()
+    local dt = now - rConfig.prediction.lasttime
+    if dt > 0 and dt < 0.1 then
+        local current = root.Position
+        if rConfig.prediction.lastposition then
+            rConfig.prediction.velocity = (current - rConfig.prediction.lastposition) / dt
+        end
+        rConfig.prediction.lastposition = current
+        rConfig.prediction.lasttime = now
     end
 end
 
-task.spawn(function()
-    local src = httpGetRetry(
-        "https://raw.githubusercontent.com/ImInsane-1337/neverlose-ui/refs/heads/main/source/library.lua",
-        8, 3
-    )
-    if not src then
-        warn("[Rivals] Library failed after all retries")
-        if _noticeGui then
-            local fr = _noticeGui:FindFirstChildWhichIsA("Frame")
-            local lb = fr and fr:FindFirstChildWhichIsA("TextLabel")
-            if lb then
-                lb.Text = "❌ Library failed — re-execute"
-                lb.TextColor3 = Color3.fromRGB(255,100,100)
-            end
-            task.delay(6, function() pcall(function() _noticeGui:Destroy() end) end)
-        end
-        return
-    end
-    local fn, err = loadstring(src)
-    if not fn then warn("[Rivals] loadstring: "..tostring(err));return end
-    local ok, result = pcall(fn)
-    if not ok then warn("[Rivals] exec: "..tostring(result));return end
-    Library    = result
-    _libLoaded = true
-    print("[Rivals] Library loaded ✅")
-    if _noticeGui then pcall(function() _noticeGui:Destroy() end);_noticeGui=nil end
-    -- ✅ Use safeInitRivals instead of raw task.spawn(initRivals)
-    task.spawn(safeInitRivals)
-end)
-
--- =============================================
---   MAIN SCRIPT
--- =============================================
-
-function initRivals()
-
-    -- =============================================
-    --   Setup UI
-    -- =============================================
-
-    local CheatName = "RivalsHub"
-    Library.Folders = {
-        Directory = CheatName,
-        Configs   = CheatName.."/Configs",
-        Assets    = CheatName.."/Assets",
+local function rAutoShoot()
+    if not rConfig.target.enabled or not rConfig.target.character or not rConfig.target.autoshoot then return end
+    if not rConfig.target.character or not rValid(rConfig.target.character) then return end
+    local hitPart = rHitpart(rConfig.target.character, rConfig.target.hitpart)
+    if not hitPart then return end
+    local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+    local shootPos = myRoot and myRoot.Position or cam.CFrame.Position
+    local targetPos = rPredict(hitPart, shootPos)
+    local data = {
+        [utf8.char(1)] = {
+            [utf8.char(0)] = util and util:EncodeCFrame(CFrame.new(shootPos, targetPos)) or "",
+            [utf8.char(1)] = util and util:EncodeCFrame(CFrame.new(shootPos, targetPos)) or "",
+            [utf8.char(2)] = hitPart,
+        }
     }
-    local Accent   = Color3.fromRGB(100,80,255)
-    local Gradient = Color3.fromRGB(40,20,120)
-    Library.Theme.Accent         = Accent
-    Library.Theme.AccentGradient = Gradient
-    Library:ChangeTheme("Accent",   Accent)
-    Library:ChangeTheme("AccentGradient", Gradient)
-
-    local Window      = Library:Window({Name="Rivals Hub",SubName="v2.4.1",Logo="120959262762131"})
-    local KeybindList = Library:KeybindList("Keybinds")
-    Library:Watermark({"Rivals Hub","v2.4.1",120959262762131,"FPS: -- | Ping: --ms"})
-
-    -- =============================================
-    --   Module References
-    -- =============================================
-
-    local function safeRequire(path)
-        if not path then return nil end
-        local ok, r = pcall(require, path)
-        return ok and r or nil
-    end
-
-    local CameraController  = safeRequire(lp.PlayerScripts:WaitForChild("Controllers",10):WaitForChild("CameraController",10))
-    local FighterController = safeRequire(lp.PlayerScripts:WaitForChild("Controllers",10):WaitForChild("FighterController",10))
-    local util              = safeRequire(ReplicatedStorage:WaitForChild("Modules",10):WaitForChild("Utility",10))
-    local enums             = safeRequire(ReplicatedStorage:WaitForChild("Modules",10):WaitForChild("EnumLibrary",10))
-    local GunModule         = safeRequire(lp.PlayerScripts.Modules.ItemTypes.Gun)
-    local DebugController   = safeRequire(lp.PlayerScripts:WaitForChild("Controllers",10):WaitForChild("DebugController",10))
-
-    -- ✅ Log which modules loaded OK vs nil
-    print("[Modules] CameraController:",  CameraController  ~= nil and "✅" or "❌ nil")
-    print("[Modules] FighterController:", FighterController ~= nil and "✅" or "❌ nil")
-    print("[Modules] util:",              util              ~= nil and "✅" or "❌ nil")
-    print("[Modules] enums:",             enums             ~= nil and "✅" or "❌ nil")
-    print("[Modules] GunModule:",         GunModule         ~= nil and "✅" or "❌ nil")
-
-    local RB  = ReplicatedStorage:WaitForChild("Remotes",10)
-    local RBF = RB:WaitForChild("Replication",10):WaitForChild("Fighter",10)
-
-    local UseItemRemote     = RBF:WaitForChild("UseItem",10)
-    local PickWeaponsRemote = RBF:WaitForChild("PickWeapons",10)
-    local VoteRemote        = RB:WaitForChild("Duels",10):WaitForChild("Vote",10)
-    local QueueRemote       = RB:WaitForChild("Matchmaking",10):WaitForChild("JoinQueue",10)
-    local SetControlsRemote = RBF:FindFirstChild("SetControls")
-
-    -- ✅ Log remotes
-    print("[Remotes] UseItemRemote:",  UseItemRemote  ~= nil and "✅" or "❌ nil")
-    print("[Remotes] VoteRemote:",     VoteRemote     ~= nil and "✅" or "❌ nil")
-
-    pcall(function()
-        if DebugController then DebugController:SetHandicapsEnabled(true) end
-    end)
-
-    -- =============================================
-    --   Lists
-    -- =============================================
-
-    local PRIMARY_WEAPONS = {
-        "Distortion","Permafrost","Energy Rifle","Flamethrower",
-        "Grenade Launcher","Minigun","Paintball","Assault Rifle",
-        "Bow","Burst Rifle","Crossbow","Gunblade","RPG","Shotgun","Sniper",
-    }
-    local SECONDARY_WEAPONS = {
-        "Warper","Energy Pistols","Exogun","Slingshot","Daggers",
-        "Flare Gun","Handgun","Revolver","Shorty","Spray","Uzi",
-    }
-    local MELEE_WEAPONS = {
-        "Maul","Spear","Trowel","Battle Axe","Chainsaw","Fist",
-        "Katana","Knife","Riot Shield","Scythe",
-    }
-    local UTILITY_WEAPONS = {
-        "Grappler","Medkit","Subspace Tripmine","Warpstone",
-        "Flashbang","Freeze Ray","Grenade","Jump Pad",
-        "Molotov","Satchel","Smoke Grenade","War Horn",
-    }
-    local MAPS = {
-        "Arena","Big Arena","Backrooms","Big Backrooms","Legacy Backrooms",
-        "Baseplate","Battleground","Legacy Battleground","Bridge","Chess",
-        "Construction","Crossroads","Big Crossroads","Legacy Crossroads",
-        "Dimensions","Docks","Legacy Docks","Graveyard","Big Graveyard",
-    }
-    local QUEUE_MODES  = {"1v1","2v2","3v3","4v4","5v5"}
-    local DEVICE_TYPES = {"Computer","Mobile","Console","VR"}
-    local PARTS        = {"Head","HumanoidRootPart","UpperTorso","LowerTorso","Body","Random"}
-    local COOLDOWN_FIELDS = {
-        "Cooldown","AttackCooldown","UseDelay","SpinCooldown",
-        "HeavyAttackCooldown","AbilityCooldown","FireCooldown",
-    }
-    local WAR_HORN_KEYS = {["War Horn"]=true,["WarHorn"]=true}
-    local HIT_SOUNDS = {
-        ["Rust"]="rbxassetid://4764109000",["Click"]="rbxassetid://6042053626",
-        ["Click 2"]="rbxassetid://5153644999",["Beep"]="rbxassetid://9120386436",
-        ["Ding"]="rbxassetid://4612375109",["Pop"]="rbxassetid://5982421855",
-        ["Punch"]="rbxassetid://386946753",["Headshot"]="rbxassetid://4612378735",
-        ["Bone Crack"]="rbxassetid://5801253825",["Vine Boom"]="rbxassetid://7293984919",
-        ["Oof"]="rbxassetid://5997174966",["Metal Hit"]="rbxassetid://10734947730",
-    }
-    local HIT_SOUND_LIST = {}
-    for k in pairs(HIT_SOUNDS) do table.insert(HIT_SOUND_LIST,k) end
-    table.sort(HIT_SOUND_LIST)
-
-    local SKYBOXES = {
-        ["Default"]  ={SkyboxBk="rbxassetid://159454299",SkyboxDn="rbxassetid://159454296",SkyboxFt="rbxassetid://159454293",SkyboxLf="rbxassetid://159454286",SkyboxRt="rbxassetid://159454300",SkyboxUp="rbxassetid://159454295"},
-        ["Night Sky"]={SkyboxBk="rbxassetid://3095606289",SkyboxDn="rbxassetid://3095606289",SkyboxFt="rbxassetid://3095606294",SkyboxLf="rbxassetid://3095606292",SkyboxRt="rbxassetid://3095606291",SkyboxUp="rbxassetid://3095606290",isNight=true},
-        ["Bliss"]    ={SkyboxBk="rbxassetid://6444884337",SkyboxDn="rbxassetid://6422644718",SkyboxFt="rbxassetid://6444884344",SkyboxLf="rbxassetid://6444884341",SkyboxRt="rbxassetid://6444884348",SkyboxUp="rbxassetid://6444884351"},
-    }
-    local SKYBOX_LIST = {"Default","Night Sky","Bliss"}
-    local PMAP = {
-        ["Head"]={"Head"},["HumanoidRootPart"]={"HumanoidRootPart"},
-        ["UpperTorso"]={"UpperTorso","Torso","HumanoidRootPart"},
-        ["LowerTorso"]={"LowerTorso","Torso","HumanoidRootPart"},
-        ["Body"]={"UpperTorso","LowerTorso","Torso","HumanoidRootPart"},
-        ["Random"]={"Random"},
-    }
-
-    -- =============================================
-    --   Helpers
-    -- =============================================
-
-    local function bPart(char,s)
-        local pr=PMAP[s] or {"Head"}
-        if pr[1]=="Random" then
-            local av={}
-            for _,n in ipairs({"Head","UpperTorso","LowerTorso","HumanoidRootPart"}) do
-                local p=char:FindFirstChild(n);if p then table.insert(av,p) end
-            end
-            return #av>0 and av[math.random(1,#av)] or nil
-        end
-        for _,n in ipairs(pr) do
-            local p=char:FindFirstChild(n);if p then return p end
-        end
-    end
-
-    local function scr()
-        return Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y/2)
-    end
-
-    local function getMouse()
-        return UserInputService:GetMouseLocation()
-    end
-
-    local function sameTm(p)
-        local r=false
+    local item = rlocalfighter and rlocalfighter.EquippedItem
+    if item and item:Get("ObjectID") then
+        local remote = ReplicatedStorage.Remotes.Replication.Fighter.UseItem
         pcall(function()
-            local a=lp:GetAttribute("TeamID");local b=p:GetAttribute("TeamID")
-            if a~=nil and b~=nil then r=(a==b) end
-        end)
-        return r
-    end
-
-    local vpRp=RaycastParams.new()
-    vpRp.FilterType=Enum.RaycastFilterType.Exclude
-
-    local function isVis(orig,part)
-        if not part then return false end
-        local ok,res=pcall(function()
-            vpRp.FilterDescendantsInstances={lp.Character,part.Parent}
-            local d=part.Position-orig
-            local h=ws:Raycast(orig,d,vpRp)
-            return h==nil or h.Instance:IsDescendantOf(part.Parent)
-        end)
-        return ok and res or false
-    end
-
-    local function inFov(part,fovSz)
-        if not part then return false end
-        local sp,on=cam:WorldToViewportPoint(part.Position)
-        if not on then return false end
-        return (Vector2.new(sp.X,sp.Y)-scr()).Magnitude<=fovSz
-    end
-
-    local function angDiff(f,t)
-        local d=t-f
-        return ((d+math.pi)%(math.pi*2))-math.pi
-    end
-
-    local function isValidTarget(player)
-        if not player or not player:IsA("Player") then return false end
-        if player==lp then return false end
-        local char=player.Character
-        if not char or not char:IsDescendantOf(workspace) then return false end
-        local hum=char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health<=0 then return false end
-        if hum:GetState()==Enum.HumanoidStateType.Dead then return false end
-        if not char:FindFirstChild("HumanoidRootPart") then return false end
-        local myChar=lp.Character
-        if myChar then
-            local myHRP=myChar:FindFirstChild("HumanoidRootPart")
-            local hrp=char:FindFirstChild("HumanoidRootPart")
-            if myHRP and hrp and (myHRP.Position-hrp.Position).Magnitude>3000 then return false end
-        end
-        return true
-    end
-
-    local function notify(title,desc,dur)
-        pcall(function()
-            Library:Notification({Title=title,Description=desc,Duration=dur or 2,Icon="73789337996373"})
+            remote:FireServer(item:Get("ObjectID"), enums and enums:ToEnum("StartShooting") or 0, data, nil)
         end)
     end
+end
 
-    local function getFlag(key,default)
-        local v=Library.Flags and Library.Flags[key]
-        if v==nil then return default end
-        if type(v)=="table" then return v[1] or default end
-        return v
-    end
-
-    local _targetCache=nil;local _targetCacheTime=0;local TARGET_CACHE_TTL=0.05
-    local function invalidateCache() _targetCache=nil;_targetCacheTime=0 end
-
-    -- =============================================
-    --   PAGES
-    -- =============================================
-
-    Window:Category("Combat")
-    local CombatPage = Window:Page({Name="Aimbot",     Icon="138827881557940"})
-    local SilentPage = Window:Page({Name="Silent Aim", Icon="138827881557940"})
-    local RagePage   = Window:Page({Name="Ragebot",    Icon="138827881557940"})
-    local WBPage     = Window:Page({Name="Wallbang",   Icon="138827881557940"})
-    local HSPage     = Window:Page({Name="Hit Sound",  Icon="138827881557940"})
-
-    Window:Category("Visuals")
-    local FOVPage = Window:Page({Name="FOV", Icon="138827881557940"})
-    local ESPPage = Window:Page({Name="ESP", Icon="138827881557940"})
-
-    Window:Category("Game")
-    local CamPage  = Window:Page({Name="Camera",  Icon="138827881557940"})
-    local MiscPage = Window:Page({Name="Misc",    Icon="138827881557940"})
-    local SkyPage  = Window:Page({Name="Skybox",  Icon="138827881557940"})
-    local DevPage  = Window:Page({Name="Exploits",Icon="138827881557940"})
-
-    local ABMain  = CombatPage:Section({Name="Aimbot",         Side=1})
-    local ABAdv   = CombatPage:Section({Name="Advanced",       Side=2})
-    local SAMain  = SilentPage:Section({Name="Silent Aim",     Side=1})
-    local SACirc  = SilentPage:Section({Name="Silent Circle",  Side=2})
-    local RGMain  = RagePage:Section({Name="Ragebot",          Side=1})
-    local RGAdv   = RagePage:Section({Name="Advanced",         Side=2})
-    local RGOnP   = RagePage:Section({Name="On Player",        Side=1})
-    local WBMain  = WBPage:Section({Name="Wallbang",           Side=1})
-    local HSMain  = HSPage:Section({Name="Hit Sound",          Side=1})
-    local FOVMain = FOVPage:Section({Name="Aimbot FOV",        Side=1})
-    local FOVSil  = FOVPage:Section({Name="Silent FOV",        Side=2})
-    local ESPMain = ESPPage:Section({Name="Player ESP",        Side=1})
-    local ESPDummy= ESPPage:Section({Name="Dummy ESP",         Side=2})
-    local CamMain = CamPage:Section({Name="Camera",            Side=1})
-    local CamAdv  = CamPage:Section({Name="Sensitivity & VM", Side=2})
-    local MLoad   = MiscPage:Section({Name="Loadout",          Side=1})
-    local MQueue  = MiscPage:Section({Name="Queue & Vote",     Side=2})
-    local SkyMain = SkyPage:Section({Name="Skybox",            Side=1})
-    local DevMain = DevPage:Section({Name="Device Spoofer",    Side=1})
-    local CoolSec = DevPage:Section({Name="Fast Cooldowns",    Side=2})
-
-    -- ============================================================
-    --   AIMBOT
-    -- ============================================================
-
-    local AB={
-        on=false,part="Head",team=true,vis=true,fov=150,dynFov=false,
-        lockMode="Soft",curvePct=10,speed=1.0,speedAttack=1.0,
-        speedScaleFov=50,maxLock=3.0,reactTime=100,useCenter=false,
-    }
-    local abTgt=nil;local abLockT=0;local abReactT=0;local abDoReact=false
-    local abPrevPos=nil;local abPrevTick=0;local abCurveProgress=0;local abCurveStart=nil
-
-    local abCirc=Drawing.new("Circle")
-    abCirc.NumSides=64;abCirc.Filled=false
-    abCirc.Color=Color3.fromRGB(255,255,255)
-    abCirc.Thickness=1.5;abCirc.Visible=false
-
-    local function abEffFov()
-        return AB.dynFov and AB.fov*(cam.FieldOfView/70) or AB.fov
-    end
-
-    local function abTgtValid(pt)
-        if not pt or not pt.Parent then return false end
-        local h=pt.Parent:FindFirstChildOfClass("Humanoid")
-        if not h or h.Health<=0 then return false end
-        if not inFov(pt,abEffFov()) then return false end
-        if AB.vis and not isVis(cam.CFrame.Position,pt) then return false end
-        if AB.team then
-            local p=Players:GetPlayerFromCharacter(pt.Parent)
-            if p and sameTm(p) then return false end
-        end
-        return true
-    end
-
-    local function abFind()
-        local center=AB.useCenter and scr() or getMouse()
-        local fv=abEffFov();local best,bd=nil,fv
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p==lp or (AB.team and sameTm(p)) or not isValidTarget(p) then continue end
-            local pt=bPart(p.Character,AB.part);if not pt then continue end
-            local sp,on=cam:WorldToViewportPoint(pt.Position);if not on then continue end
-            local d=(Vector2.new(sp.X,sp.Y)-center).Magnitude
-            if d<bd then
-                if AB.vis and not isVis(cam.CFrame.Position,pt) then continue end
-                bd=d;best=pt
-            end
-        end
-        return best
-    end
-
-    local function getPredictedPos(pt)
-        local now=tick();local pos=pt.Position
-        if abPrevPos and (now-abPrevTick)>0 then
-            local vel=(pos-abPrevPos)/(now-abPrevTick)
-            pos=pos+vel*(0.08*AB.speedAttack)
-        end
-        abPrevPos=pt.Position;abPrevTick=now;return pos
-    end
-
-    local function applySmartLock(tRot,cur,dt,sd,fr)
-        local df=AB.speed
-        if fr>0 then df=AB.speed+(AB.speedScaleFov/100)*(1-math.clamp(sd/fr,0,1))*math.max(AB.speedAttack-AB.speed,0) end
-        local eff=math.clamp(df,0.01,5);local fac=math.clamp(eff*dt*6,0,1)
-        if AB.lockMode~="Curve" then
-            return Vector2.new(cur.X+(tRot.X-cur.X)*fac,cur.Y+angDiff(cur.Y,tRot.Y)*fac)
-        end
-        local dist2=math.sqrt((tRot.X-cur.X)^2+angDiff(cur.Y,tRot.Y)^2)
-        if abCurveStart==nil or dist2>0.5 then abCurveStart=cur;abCurveProgress=0 end
-        local sp2=(AB.curvePct/100)*3*eff
-        abCurveProgress=math.clamp(abCurveProgress+sp2*dt,0,1)
-        local c=abCurveProgress^2*(3-2*abCurveProgress)
-        local nP=abCurveStart.X+(tRot.X-abCurveStart.X)*c
-        local nY=abCurveStart.Y+angDiff(abCurveStart.Y,tRot.Y)*c
-        if abCurveProgress>=1 then abCurveStart=nil;abCurveProgress=0 end
-        return Vector2.new(nP,nY)
-    end
-
-    ABMain:Toggle({Name="Enable Aimbot",Flag="AimbotOn",Default=false,Callback=function(v)
-        AB.on=v
-        if not v then
-            abTgt=nil;abLockT=0;abDoReact=false
-            abPrevPos=nil;abCurveStart=nil;abCurveProgress=0;invalidateCache()
-        end
-        notify("Aimbot",v and "Active!" or "Off")
-    end})
-    ABMain:Toggle({Name="Team Check",   Flag="AimbotTeam",  Default=true, Callback=function(v) AB.team=v end})
-    ABMain:Toggle({Name="Visible Check",Flag="AimbotVis",   Default=true, Callback=function(v) AB.vis=v end})
-    ABMain:Toggle({Name="Screen Center",Flag="AimbotCenter",Default=false,Callback=function(v) AB.useCenter=v end})
-    ABMain:Toggle({Name="Dynamic FOV",  Flag="AimbotDynFov",Default=false,Callback=function(v) AB.dynFov=v end})
-    ABMain:Dropdown({Name="Aim Part",Flag="AimbotPart",Default={"Head"},Items=PARTS,Multi=false,
-        Callback=function(v) AB.part=type(v)=="table" and v[1] or v end})
-    ABMain:Dropdown({Name="Lock Mode",Flag="AimbotMode",Default={"Soft"},Items={"Soft","Magnet","Curve"},Multi=false,
-        Callback=function(v) AB.lockMode=type(v)=="table" and v[1] or v;abCurveStart=nil;abCurveProgress=0 end})
-    ABMain:Slider({Name="FOV Size",Flag="AimbotFov",Min=10,Max=500,Default=150,Suffix=" px",
-        Callback=function(v) AB.fov=v;abCirc.Radius=v end})
-    ABAdv:Slider({Name="Speed",          Flag="AimbotSpd",     Min=1,Max=500,Default=100,Suffix="x0.01",Callback=function(v) AB.speed=v/100 end})
-    ABAdv:Slider({Name="Attack Speed",   Flag="AimbotAtkSpd",  Min=1,Max=500,Default=100,Suffix="x0.01",Callback=function(v) AB.speedAttack=v/100 end})
-    ABAdv:Slider({Name="Speed Scale FOV",Flag="AimbotSpdScale",Min=0,Max=100,Default=50, Suffix="%",   Callback=function(v) AB.speedScaleFov=v end})
-    ABAdv:Slider({Name="Curve",          Flag="AimbotCurve",   Min=1,Max=400,Default=10, Suffix="%",   Callback=function(v) AB.curvePct=v end})
-    ABAdv:Slider({Name="Max Lock",       Flag="AimbotMaxLock", Min=1,Max=1000,Default=300,Suffix="x0.01s",Callback=function(v) AB.maxLock=v/100 end})
-    ABAdv:Slider({Name="Reaction",       Flag="AimbotReact",   Min=0,Max=500,Default=100,Suffix="ms",  Callback=function(v) AB.reactTime=v end})
-
-    -- ============================================================
-    --   FOV CIRCLES
-    -- ============================================================
-
-    local fovCfg={
-        visible=true,half=false,
-        color=Color3.fromRGB(255,255,255),
-        fovSize=150,onTarget=60,onBarrier=200,useCenter=false,
-    }
-    local fovCircle=Drawing.new("Circle")
-    fovCircle.Visible=false;fovCircle.Thickness=1.5
-    fovCircle.Color=Color3.fromRGB(255,255,255)
-    fovCircle.Filled=false;fovCircle.NumSides=64;fovCircle.Radius=150
-
-    local fovHalf=Drawing.new("Circle")
-    fovHalf.Visible=false;fovHalf.Thickness=1
-    fovHalf.Color=Color3.fromRGB(255,255,255)
-    fovHalf.Filled=false;fovHalf.NumSides=32;fovHalf.Radius=75
-
-    FOVMain:Toggle({Name="Show FOV Circle",Flag="FovVisible",Default=true, Callback=function(v) fovCfg.visible=v end})
-    FOVMain:Toggle({Name="Half Circle",    Flag="FovHalf",   Default=false,Callback=function(v) fovCfg.half=v end})
-    FOVMain:Toggle({Name="Screen Center",  Flag="FovCenter", Default=false,Callback=function(v) fovCfg.useCenter=v end})
-    FOVMain:Label("FOV Color"):Colorpicker({Name="Color",Flag="FovColor",Default=Color3.fromRGB(255,255,255),Callback=function(v) fovCfg.color=v end})
-    FOVMain:Slider({Name="FOV Radius", Flag="FovRadius",   Min=10,Max=500,Default=150,Suffix=" px",Callback=function(v) fovCfg.fovSize=v;AB.fov=v;fovCircle.Radius=v;abCirc.Radius=v end})
-    FOVMain:Slider({Name="On Target",  Flag="FovOnTarget", Min=10,Max=500,Default=60, Suffix=" px",Callback=function(v) fovCfg.onTarget=v end})
-    FOVMain:Slider({Name="On Barrier", Flag="FovOnBarrier",Min=10,Max=500,Default=200,Suffix=" px",Callback=function(v) fovCfg.onBarrier=v end})
-
-    -- ============================================================
-    --   SILENT AIM
-    -- ============================================================
-
-    local silentCfg={
-        enabled=false,hitChance=100,prediction=0,visCheck=true,
-        useCenter=false,fovSize=150,maxDist=200,part="Head",
-        circleVisible=true,
-        circleColor=Color3.fromRGB(0,200,255),
-        circleThick=1.5,
-        targetColor=Color3.fromRGB(255,50,50),
-    }
-
-    local silentCircle=Drawing.new("Circle")
-    silentCircle.Thickness=1.5;silentCircle.Filled=false
-    silentCircle.NumSides=64;silentCircle.Visible=false
-    silentCircle.Radius=150;silentCircle.Color=Color3.fromRGB(0,200,255)
-
-    local silentHooked=false;local silentOldFunc=nil
-
-    local function fetchEntities()
-        local entities={}
-        for _,v in pairs(ws:GetChildren()) do
-            if v:FindFirstChildOfClass("Humanoid") then
-                table.insert(entities,v)
-            elseif v.Name=="HurtEffect" then
-                for _,child in pairs(v:GetChildren()) do
-                    if child.ClassName~="Highlight" then table.insert(entities,child) end
-                end
-            end
-        end
-        return entities
-    end
-
-    local function fetchNearest(part)
-        local center=Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y/2)
-        local target,dist=nil,math.huge
-        for _,entity in pairs(fetchEntities()) do
-            if entity==lp.Character then continue end
-            if not entity:FindFirstChild("HumanoidRootPart") then continue end
-            local hum=entity:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health<=0 then continue end
-            local hitPart=entity:FindFirstChild(part or silentCfg.part)
-            if not hitPart then continue end
-            local pos,visible=cam:WorldToViewportPoint(hitPart.Position)
-            if not visible then continue end
-            local mag=(center-Vector2.new(pos.X,pos.Y)).Magnitude
-            if mag<dist and mag<silentCfg.fovSize then
-                if silentCfg.visCheck then
-                    local myRoot=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                    local orig=myRoot and myRoot.Position or cam.CFrame.Position
-                    if not isVis(orig,hitPart) then continue end
-                end
-                dist=mag;target=entity
-            end
-        end
-        return target
-    end
-
-    local function hookSilent()
-        if silentHooked or not util then return end
-        silentOldFunc=util.Raycast
-        util.Raycast=function(self,origin,direction,distance,...)
-            if silentCfg.enabled and math.random(1,100)<=silentCfg.hitChance then
-                local aim=fetchNearest(silentCfg.part)
-                local node=aim and aim:FindFirstChild(silentCfg.part)
-                if node then
-                    local targetPos=node.Position
-                    if silentCfg.prediction>0 then
-                        pcall(function()
-                            local hrp=aim:FindFirstChild("HumanoidRootPart")
-                            local vel=hrp and hrp.AssemblyLinearVelocity or Vector3.zero
-                            targetPos=targetPos+vel*(silentCfg.prediction*0.05)
-                        end)
-                    end
-                    direction=targetPos-origin
-                end
-            end
-            return silentOldFunc(self,origin,direction,distance,...)
-        end
-        silentHooked=true
-    end
-
-    local function unhookSilent()
-        if not silentHooked or not util then return end
-        pcall(function() util.Raycast=silentOldFunc end)
-        silentOldFunc=nil;silentHooked=false
-    end
-
-    SAMain:Toggle({Name="Enable Silent Aim",Flag="SilentOn",Default=false,Callback=function(v)
-        silentCfg.enabled=v
-        if v then hookSilent();notify("Silent Aim","Active!") else unhookSilent();notify("Silent Aim","Off") end
-    end})
-    SAMain:Toggle({Name="Visible Check",Flag="SilentVis",   Default=true, Callback=function(v) silentCfg.visCheck=v end})
-    SAMain:Toggle({Name="Screen Center",Flag="SilentCenter",Default=false,Callback=function(v) silentCfg.useCenter=v end})
-    SAMain:Dropdown({Name="Target Part",Flag="SilentPart",Default={"Head"},Items=PARTS,Multi=false,
-        Callback=function(v) silentCfg.part=type(v)=="table" and v[1] or v end})
-    SAMain:Slider({Name="Hit Chance", Flag="SilentChance",Min=1,Max=100,Default=100,Suffix="%",    Callback=function(v) silentCfg.hitChance=v end})
-    SAMain:Slider({Name="Prediction", Flag="SilentPred",  Min=0,Max=100,Default=0,  Suffix="x0.05",Callback=function(v) silentCfg.prediction=v end})
-    SAMain:Slider({Name="FOV",        Flag="SilentFov",   Min=10,Max=600,Default=150,Suffix=" px", Callback=function(v) silentCfg.fovSize=v;silentCircle.Radius=v end})
-    SAMain:Slider({Name="Max Distance",Flag="SilentDist", Min=10,Max=2000,Default=200,Suffix=" studs",Callback=function(v) silentCfg.maxDist=v end})
-
-    FOVSil:Toggle({Name="Show Circle",Flag="SilentCircOn",Default=true,
-        Callback=function(v) silentCfg.circleVisible=v;if not v then silentCircle.Visible=false end end})
-    FOVSil:Label("Normal Color"):Colorpicker({Name="Color",Flag="SilentCircColor",Default=Color3.fromRGB(0,200,255),
-        Callback=function(v) silentCfg.circleColor=v end})
-    FOVSil:Label("On Target Color"):Colorpicker({Name="Color",Flag="SilentTargColor",Default=Color3.fromRGB(255,50,50),
-        Callback=function(v) silentCfg.targetColor=v end})
-    FOVSil:Slider({Name="Thickness",Flag="SilentCircThick",Min=5,Max=50,Default=15,Suffix="x0.1",
-        Callback=function(v) silentCfg.circleThick=v*0.1;silentCircle.Thickness=v*0.1 end})
-
-    -- ============================================================
-    --   FULL RAGEBOT ENGINE
-    -- ============================================================
-
-    local rageModules = {
-        enums      = instanceSafeRequire(ReplicatedStorage.Modules.EnumLibrary),
-        fighter    = instanceSafeRequire(lp.PlayerScripts.Controllers.FighterController),
-        camcontrol = instanceSafeRequire(lp.PlayerScripts.Controllers.CameraController),
-        utility    = instanceSafeRequire(ReplicatedStorage.Modules.Utility),
-    }
-
-    -- ✅ Log rageModules
-    print("[RageModules] enums:",      rageModules.enums      ~= nil and "✅" or "❌ nil")
-    print("[RageModules] fighter:",    rageModules.fighter    ~= nil and "✅" or "❌ nil")
-    print("[RageModules] camcontrol:", rageModules.camcontrol ~= nil and "✅" or "❌ nil")
-    print("[RageModules] utility:",    rageModules.utility    ~= nil and "✅" or "❌ nil")
-
-    -- ── Match State ──────────────────────────────────────────────
-
-    local MATCH_ID_ATTRS   = {"MatchId","DuelId","RoundId","GameId","MatchUUID","ArenaId","InstanceId"}
-    local DUEL_STATE_ATTRS = {"InDuel","InMatch","InRound","InGame","InFight","IsInMatch","IsInDuel","MatchActive","Fighting"}
-    local SPAWN_SAFE_ATTRS = {"InSpawn","InLobby","IsSpectating","InSafeZone","InIntermission","IsRespawning"}
-
-    local function inLive(targetPlr)
-        if not targetPlr then return false end
-        local live=ws:FindFirstChild("Live");if not live then return false end
-        if live:FindFirstChild(targetPlr.Name) then return true end
-        local char=targetPlr.Character
-        if char and (char.Parent==live or char:IsDescendantOf(live)) then return true end
-        local fc=rageModules.fighter
-        if fc and type(fc.GetFighter)=="function" then
-            local ok,fighter=pcall(fc.GetFighter,fc,targetPlr)
-            if ok and fighter and fighter.Entity and fighter.Entity.Parent then
-                if fighter.Entity.Parent==live or fighter.Entity:IsDescendantOf(live) then return true end
-            end
-        end
-        return false
-    end
-
-    local function plrMid(targetPlr)
-        if not targetPlr then return nil end
-        for _,key in ipairs(MATCH_ID_ATTRS) do
-            local v=targetPlr:GetAttribute(key)
-            if v~=nil and v~="" and v~=0 and v~=false then return tostring(v) end
-        end
-        local char=targetPlr.Character
-        if char then
-            for _,key in ipairs(MATCH_ID_ATTRS) do
-                local v=char:GetAttribute(key)
-                if v~=nil and v~="" and v~=0 and v~=false then return tostring(v) end
-            end
-        end
-        return nil
-    end
-
-    local function liveMatch()
-        if not lp then return false end
-        for _,key in ipairs(SPAWN_SAFE_ATTRS) do
-            local v=lp:GetAttribute(key)
-            if v==true or v==1 or v=="true" then return false end
-        end
-        local char=lp.Character;if not char then return false end
-        for _,key in ipairs(SPAWN_SAFE_ATTRS) do
-            local cv=char:GetAttribute(key)
-            if cv==true or cv==1 or cv=="true" then return false end
-        end
-        local hum=char:FindFirstChildOfClass("Humanoid")
-        local myRoot=char:FindFirstChild("HumanoidRootPart")
-        if not hum or hum.Health<=0 or not myRoot then return false end
-        for _,key in ipairs(DUEL_STATE_ATTRS) do
-            local v=lp:GetAttribute(key)
-            if v==true or v==1 or v=="true" then return true end
-            local cv=char:GetAttribute(key)
-            if cv==true or cv==1 or cv=="true" then return true end
-        end
-        if inLive(lp) then return true end
-        local fc=rageModules.fighter
-        if fc and fc.LocalFighter and fc.LocalFighter.Entity and fc.LocalFighter.Entity.Parent then return true end
-        local myMatchId=plrMid(lp)
-        if myMatchId then
-            for _,plr in Players:GetPlayers() do
-                if plr~=lp and plrMid(plr)==myMatchId then return true end
-            end
-        end
-        return false
-    end
-
-    local _instanceLobbyCache={t=0,v=true}
-    local function lobbyCache()
-        local now=os.clock()
-        if now-_instanceLobbyCache.t<0.15 then return _instanceLobbyCache.v end
-        _instanceLobbyCache.t=now;_instanceLobbyCache.v=not liveMatch()
-        return _instanceLobbyCache.v
-    end
-
-    getgenv().InstanceIsInActiveMatch = liveMatch
-    getgenv().InstanceIsInLobby       = lobbyCache
-
-    -- ── Ragebot Config ───────────────────────────────────────────
-
-    local rConfig = {
-        target = {
-            enabled=false,character=nil,auto=false,autoshoot=true,
-            shootAttempts=1,hitpart="Head",lastchar=nil,lastplayer=nil,
-            manualkey=false,immune=false,attackPosition="default",
-            attackCustomEnabled=false,weaponPick="primary",forceWeapon=true,
-            rageMasterOn=false,meleeFeetDrop=3.5,underOffset=4,
-            customHeight=2,customFront=0,customSide=0,customVertical=0,customRadius=0,
-        },
-        prediction={
-            enabled=false,multiplier=1.2,velocity=Vector3.new(0,0,0),
-            lastposition=nil,lasttime=0,
-        },
-        orbit={
-            active=false,angle=0,serverpos=nil,connection=nil,
-            speed=9000,height=1,radius=0,savedpos=nil,
-        },
-        state={
-            reloading=false,outofammo=false,csyncactive=false,reloadStartedAt=0,
-        },
-        voidhide={enabled=true,active=false},
-        voidspam={
-            enabled=false,shoot_min=1,shoot_max=1,hide_min=1,hide_max=1,
-            phase=nil,lastswitch=0,currentduration=0,
-        },
-    }
-
-    local vhState={active=false,hrp=nil,mainConnection=nil,currentVoidPos=nil}
-    local rlocalfighter = rageModules.fighter and rageModules.fighter.LocalFighter
-    local rOldPos
-
-    -- ── Weapon Helpers ───────────────────────────────────────────
-
-    local RSLOTS    = {primary=1,secondary=2,melee=3}
-    local MELEE_NMS = {["Battle Axe"]=true,["Chainsaw"]=true,["Daggers"]=true,["Fists"]=true,["Gunblade"]=true,["Katana"]=true,["Knife"]=true,["Scythe"]=true,["Trowel"]=true}
-    local INF_AMMO  = {["Energy Rifle"]=true,["Energy Pistols"]=true}
-
-    local function rGetWeapon()
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if not lf or not lf.EquippedItem then return nil end
-        local ok,nm=pcall(function() return lf.EquippedItem:Get("Name") end)
-        return ok and nm or nil
-    end
-
-    local function rIsInfinite()
-        local w=rGetWeapon();return w and INF_AMMO[w]==true or false
-    end
-
-    local function rWantSlot() return RSLOTS[rConfig.target.weaponPick or "primary"] or 1 end
-    local function rPickMelee() return (rConfig.target.weaponPick or "primary")=="melee" end
-    local function rIsSling(w) return w and w:lower():find("slingshot",1,true)~=nil end
-
-    local function rGetAmmo()
-        if rIsInfinite() then return nil,nil,false end
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if not lf or not lf.EquippedItem then return 0,0,rPickMelee() end
-        local itemName,current,maxAmmo,isMelee="",0,0,false
-        pcall(function()
-            itemName=tostring(lf.EquippedItem:Get("Name") or "")
-            current=lf.EquippedItem:Get("CurrentAmmo") or lf.EquippedItem:Get("Ammo") or 0
-            maxAmmo=lf.EquippedItem:Get("MaxAmmo") or current
-            if MELEE_NMS[itemName] then isMelee=true end
-        end)
-        if rPickMelee() then isMelee=true end
-        return tonumber(current) or 0,tonumber(maxAmmo) or 0,isMelee
-    end
-
-    local function rlfItems()
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if not lf then return nil end;return lf.Items
-    end
-
-    local function rSlotItem(slotIdx)
-        local items=rlfItems();if not items then return nil end
-        if items[slotIdx] then return items[slotIdx] end
-        for key,it in pairs(items) do
-            if it and typeof(it)=="table" then
-                local s=tonumber(it:Get("Slot") or it:Get("Index") or key)
-                if s==slotIdx then return it end
-            end
-        end
-        return nil
-    end
-
-    local rLastSlotForce=0
-    local function rEqSlot()
-        if not rConfig.target.rageMasterOn then return end
-        local want=rWantSlot()
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if not lf then return end
-        local now=tick();if now-rLastSlotForce<0.06 then return end
-        rLastSlotForce=now
-        local item=rSlotItem(want)
-        local oid=item and item:Get("ObjectID")
-        if oid then
-            -- ✅ FIX: Use safeToEnum for equip events
-            local rm=ReplicatedStorage.Remotes.Replication.Fighter.UseItem
-            for _,en in ipairs({"Equip","Switch","Select","EquipItem"}) do
-                pcall(function()
-                    local ev=safeToEnum(rageModules.enums,en)
-                    if ev then rm:FireServer(oid,ev,nil,nil) end
-                end)
-            end
-        end
-        pcall(function()
-            if lf.EquipItem then lf:EquipItem(want) end
-            if lf.SwitchToSlot then lf:SwitchToSlot(want) end
-        end)
-    end
-
-    -- ── Void / Snap ───────────────────────────────────────────────
-
-    local vfrLim,vfrDead=2147483646,1147483646
-    local vfrSnap={cf=nil,lv=nil,av=nil}
-
-    local function clrVoidSnap() vfrSnap.cf,vfrSnap.lv,vfrSnap.av=nil,nil,nil end
-    local function rVoidHrp()
-        local char=lp.Character;return char and char:FindFirstChild("HumanoidRootPart")
-    end
-    local function rndSkip(mi,ma,dmi,dma)
-        local val=math.random(mi,ma)
-        while val>=dmi and val<=dma do val=math.random(mi,ma) end
-        return val
-    end
-    local function snapVoid(hrp)
-        if not hrp then return end
-        if lobbyCache() then return end
-        vfrSnap.cf=hrp.CFrame;vfrSnap.lv=hrp.AssemblyLinearVelocity;vfrSnap.av=hrp.AssemblyAngularVelocity
-        pcall(function()
-            local p=Vector3.new(
-                rndSkip(-vfrLim,vfrLim,-vfrDead,vfrDead),
-                rndSkip(-vfrLim,vfrLim,-vfrDead,vfrDead),
-                rndSkip(-vfrLim,vfrLim,-vfrDead,vfrDead)
-            )
-            hrp.CFrame=CFrame.new(p)*CFrame.Angles(math.pi,math.pi,math.pi)
-            hrp.AssemblyLinearVelocity=p;hrp.AssemblyAngularVelocity=p
-        end)
-    end
-
-    RunService:BindToRenderStep("vfr_csync",Enum.RenderPriority.First.Value,function()
-        if not vfrSnap.cf then return end
-        local hrp=rVoidHrp();if not hrp then return end
-        pcall(function()
-            hrp.CFrame=vfrSnap.cf
-            hrp.AssemblyLinearVelocity=vfrSnap.lv
-            hrp.AssemblyAngularVelocity=vfrSnap.av
-        end)
-    end)
-
-    -- ── Prediction ────────────────────────────────────────────────
-
-    local function rUpdateVel()
-        if not rConfig.target.character or not rConfig.prediction.enabled then
-            rConfig.prediction.velocity=Vector3.new(0,0,0);return
-        end
-        local root=rConfig.target.character:FindFirstChild("HumanoidRootPart");if not root then return end
-        local now=tick();local dt=now-rConfig.prediction.lasttime
-        if dt>0 and dt<0.1 then
-            local currentpos=root.Position
-            if rConfig.prediction.lastposition then
-                local instantvel=(currentpos-rConfig.prediction.lastposition)/dt
-                rConfig.prediction.velocity=rConfig.prediction.velocity:Lerp(instantvel,0.6)
-            end
-            rConfig.prediction.lastposition=root.Position;rConfig.prediction.lasttime=now
+-- Main Heartbeat
+RunService.Heartbeat:Connect(function()
+    if rConfig.target.auto then
+        if not rConfig.target.enabled or not rConfig.target.character or not rValid(rConfig.target.character) then
+            local newTarget = rNearest()
+            if newTarget then rConfig.target.character = newTarget; rConfig.target.enabled = true end
         end
     end
-
-    local function rPredict(targetpart,origin)
-        if not rConfig.prediction.enabled or not targetpart then
-            return targetpart and targetpart.Position or Vector3.new()
-        end
-        local basepos=targetpart.Position
-        local distance=(basepos-origin).Magnitude
-        local ping=0
-        pcall(function()
-            ping=Stats.Network.ServerStatsItem["Data Ping"]:GetValue()/1000
-        end)
-        local traveltime=distance/3000
-        local totaltime=(traveltime+ping)*rConfig.prediction.multiplier
-        return basepos+(rConfig.prediction.velocity*totaltime)
-    end
-
-    -- ── Target Valid / Find ───────────────────────────────────────
-
-    local function rIsteammate(targetplayer)
-        if not targetplayer then return false end
-        return lp:GetAttribute("TeamID")==targetplayer:GetAttribute("TeamID")
-    end
-
-    local function rValid(char)
-        if not char or not char.Parent then return false end
-        local humanoid=char:FindFirstChildOfClass("Humanoid")
-        if not humanoid or humanoid.Health<=0 then return false end
-        if not char:FindFirstChild("HumanoidRootPart") then return false end
-        local targetplayer=Players:GetPlayerFromCharacter(char)
-        if not targetplayer or rIsteammate(targetplayer) then return false end
-        return true
-    end
-
-    local function rNearest()
-        local cursorpos=UserInputService:GetMouseLocation()
-        local besttarget,bestdistance=nil,math.huge
-        for _,targetplayer in Players:GetPlayers() do
-            if targetplayer~=lp and targetplayer.Character then
-                local char=targetplayer.Character
-                if rValid(char) then
-                    local root=char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local sp,on=cam:WorldToViewportPoint(root.Position)
-                        if on then
-                            local distance=(Vector2.new(sp.X,sp.Y)-cursorpos).Magnitude
-                            if distance<bestdistance then besttarget=char;bestdistance=distance end
-                        end
-                    end
-                end
-            end
-        end
-        return besttarget
-    end
-
-    local function rHitpartFromName(character,partname)
-        if not character then return nil end
-        if partname=="Closest" then
-            local mypos=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            if not mypos then return character:FindFirstChild("Head") end
-            local closest,dist=nil,math.huge
-            for _,part in pairs(character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    local d=(part.Position-mypos.Position).Magnitude
-                    if d<dist then dist=d;closest=part end
-                end
-            end
-            return closest or character:FindFirstChild("Head")
-        elseif partname=="Random" then
-            local parts={"Head","HumanoidRootPart","UpperTorso"}
-            return character:FindFirstChild(parts[math.random(#parts)]) or character:FindFirstChild("Head")
+    if rConfig.target.enabled and rConfig.target.character then
+        if not rValid(rConfig.target.character) then
+            rConfig.target.enabled = false
+            rConfig.target.character = nil
         else
-            return character:FindFirstChild(partname) or character:FindFirstChild("Head")
+            if rConfig.target.autoshoot then rAutoShoot() end
+            if rConfig.prediction.enabled then rUpdateVel() end
         end
     end
+end)
 
-    -- ── Orbit / Sync ──────────────────────────────────────────────
+-- Simple Target Lock button (uses the existing functions)
+local function lockNearest()
+    local char = rNearest()
+    if char then
+        rConfig.target.enabled = true
+        rConfig.target.character = char
+        local p = Players:GetPlayerFromCharacter(char)
+        pcall(function() label.Text = "Target: " .. (p and p.Name or "?") end)
+        return true
+    end
+    return false
+end
 
-    local function rAtkCfg()
-        if rPickMelee() and not rConfig.target.attackCustomEnabled then
-            return {height=0,front=0,side=0,vertical=-(rConfig.target.meleeFeetDrop or 3.5),radius=0}
+local function clearTarget()
+    rConfig.target.enabled = false
+    rConfig.target.character = nil
+    pcall(function() label.Text = "Rivals v2.4 (Mobile) — Ready" end)
+end
+
+-- =============================================
+--   ESP (Players + Dummies)
+-- =============================================
+
+local espObjects = {}
+local dummyEspObjects = {}
+local espCfg = {
+    enabled = false, box = true, boxColor = Color3.fromRGB(255,255,255),
+    name = true, nameColor = Color3.fromRGB(255,255,255), nameSize = 12,
+    health = true, tracer = true, tracerColor = Color3.fromRGB(0,200,255),
+    maxDist = 1000, dummyEnabled = false, dummyBoxColor = Color3.fromRGB(255,165,0)
+}
+
+-- Player ESP
+local function makeEspObj(p)
+    return {
+        player = p,
+        box = Drawing.new("Square"),
+        boxFill = Drawing.new("Square"),
+        name = Drawing.new("Text"),
+        health = Drawing.new("Square"),
+        healthFg = Drawing.new("Square"),
+        tracer = Drawing.new("Line"),
+    }
+end
+
+local function updateEsp()
+    if not espCfg.enabled then
+        for _, obj in pairs(espObjects) do
+            for _, d in pairs(obj) do if typeof(d) == "table" and d.Visible ~= nil then d.Visible = false end end
         end
-        if rConfig.target.attackCustomEnabled then
-            return {
-                height=rConfig.target.customHeight or 2,front=rConfig.target.customFront or 0,
-                side=rConfig.target.customSide or 0,vertical=rConfig.target.customVertical or 0,
-                radius=rConfig.target.customRadius or 0,
+        return
+    end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p == lp or not isValidTarget(p) then continue end
+        if not espObjects[p] then espObjects[p] = makeEspObj(p) end
+        local obj = espObjects[p]
+        local char = p.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then
+            for _, d in pairs(obj) do if typeof(d) == "table" and d.Visible ~= nil then d.Visible = false end end
+            continue
+        end
+        local sp, on = cam:WorldToViewportPoint(hrp.Position)
+        if not on then
+            for _, d in pairs(obj) do if typeof(d) == "table" and d.Visible ~= nil then d.Visible = false end end
+            continue
+        end
+        local head = char:FindFirstChild("Head")
+        local headSP, headOn = head and cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local footSP, footOn = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+        if not headOn or not footOn then continue end
+        local h = math.abs(headSP.Y - footSP.Y)
+        local w = h * 0.5
+        local cx = sp.X
+        local cy = (headSP.Y + footSP.Y) / 2
+        local bx = cx - w / 2
+        local by = headSP.Y
+
+        if espCfg.box then
+            obj.box.Visible = true
+            obj.box.Color = espCfg.boxColor
+            obj.box.Position = Vector2.new(bx, by)
+            obj.box.Size = Vector2.new(w, h)
+        else obj.box.Visible = false end
+
+        if espCfg.name then
+            obj.name.Visible = true
+            obj.name.Text = p.Name
+            obj.name.Color = espCfg.nameColor
+            obj.name.Size = espCfg.nameSize
+            obj.name.Position = Vector2.new(cx, by - espCfg.nameSize - 2)
+        else obj.name.Visible = false end
+
+        if espCfg.health then
+            local hp = hum.Health / math.max(hum.MaxHealth, 1)
+            obj.health.Visible = true
+            obj.health.Position = Vector2.new(bx - 5, by)
+            obj.health.Size = Vector2.new(3, h)
+            obj.health.Color = Color3.fromRGB(30, 30, 30)
+            obj.healthFg.Visible = true
+            obj.healthFg.Position = Vector2.new(bx - 5, by + h * (1 - hp))
+            obj.healthFg.Size = Vector2.new(3, h * hp)
+            obj.healthFg.Color = Color3.fromRGB(math.floor((1 - hp) * 255), math.floor(hp * 255), 0)
+        else obj.health.Visible = false; obj.healthFg.Visible = false end
+
+        if espCfg.tracer then
+            obj.tracer.Visible = true
+            obj.tracer.Color = espCfg.tracerColor
+            obj.tracer.From = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y)
+            obj.tracer.To = Vector2.new(sp.X, sp.Y)
+        else obj.tracer.Visible = false end
+    end
+end
+
+-- Dummy ESP (simplified)
+local function updateDummyEsp()
+    if not espCfg.dummyEnabled then
+        for _, obj in pairs(dummyEspObjects) do
+            for _, d in pairs(obj) do if typeof(d) == "table" and d.Visible ~= nil then d.Visible = false end end
+        end
+        return
+    end
+    local sre = ws:FindFirstChild("ShootingRangeEntities")
+    if not sre then return end
+    local dummies = {}
+    local dps = sre:FindFirstChild("DPS Dummy") or sre:FindFirstChild("DPS_Dummy")
+    if dps then table.insert(dummies, dps) end
+    local norm = sre:FindFirstChild("Dummy")
+    if norm then table.insert(dummies, norm) end
+    for _, dummy in ipairs(dummies) do
+        if not dummyEspObjects[dummy] then
+            dummyEspObjects[dummy] = {
+                box = Drawing.new("Square"),
+                name = Drawing.new("Text"),
+                health = Drawing.new("Square"),
+                healthFg = Drawing.new("Square"),
+                label = Drawing.new("Text")
             }
         end
-        local mode=rConfig.target.attackPosition or "default"
-        local weapon=rGetWeapon()
-        if mode=="under" then
-            return {height=0,front=0,side=0,vertical=-(rConfig.target.underOffset or 4),radius=0}
-        end
-        return {height=(weapon and weapon:lower():find("sniper")) and 8 or 2,front=0,side=0,vertical=0,radius=0}
+        local obj = dummyEspObjects[dummy]
+        local hrp = dummy:FindFirstChild("HumanoidRootPart")
+        local hum = dummy:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then continue end
+        local sp, on = cam:WorldToViewportPoint(hrp.Position)
+        if not on then continue end
+        local headSP, headOn = cam:WorldToViewportPoint(hrp.Position + Vector3.new(0, 2, 0))
+        local footSP, footOn = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+        if not headOn or not footOn then continue end
+        local h = math.abs(headSP.Y - footSP.Y)
+        local w = h * 0.5
+        local cx = sp.X
+        local by = headSP.Y
+
+        obj.box.Visible = true
+        obj.box.Color = espCfg.dummyBoxColor
+        obj.box.Position = Vector2.new(cx - w / 2, by)
+        obj.box.Size = Vector2.new(w, h)
+
+        obj.name.Visible = true
+        obj.name.Text = dummy.Name
+        obj.name.Color = espCfg.dummyBoxColor
+        obj.name.Position = Vector2.new(cx, by - 13)
+        obj.name.Size = 11
+
+        local hp = hum.Health / math.max(hum.MaxHealth, 1)
+        obj.health.Visible = true
+        obj.health.Position = Vector2.new(cx - w / 2 - 5, by)
+        obj.health.Size = Vector2.new(3, h)
+        obj.healthFg.Visible = true
+        obj.healthFg.Position = Vector2.new(cx - w / 2 - 5, by + h * (1 - hp))
+        obj.healthFg.Size = Vector2.new(3, h * hp)
+        obj.healthFg.Color = Color3.fromRGB(255, 165, 0)
+
+        obj.label.Visible = true
+        obj.label.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+        obj.label.Color = Color3.fromRGB(255, 200, 100)
+        obj.label.Position = Vector2.new(cx, by + h + 2)
+        obj.label.Size = 10
     end
+end
 
-    local function rOrbBase(root)
-        if not root then return Vector3.zero end
-        local settings=rAtkCfg()
-        return root.Position
-            +(root.CFrame.LookVector*settings.front)
-            +(root.CFrame.RightVector*settings.side)
-            +Vector3.new(0,settings.vertical,0)
-    end
+-- =============================================
+--   FAST COOLDOWNS (Mobile-safe)
+-- =============================================
 
-    local function randVs(a,b)
-        a=math.clamp(a,0.1,2);b=math.clamp(b,0.1,2)
-        if b<a then a,b=b,a end
-        return a==b and a or a+math.random()*(b-a)
-    end
-
-    local function rVoidSpamTick()
-        if not rConfig.voidspam.enabled then return end
-        local now=tick();local elapsed=now-rConfig.voidspam.lastswitch
-        if rConfig.voidspam.phase=="shoot" then
-            if elapsed>=rConfig.voidspam.currentduration then
-                rConfig.voidspam.phase="hide"
-                rConfig.voidspam.currentduration=randVs(rConfig.voidspam.hide_min,rConfig.voidspam.hide_max)
-                rConfig.voidspam.lastswitch=now
-            end
-        elseif rConfig.voidspam.phase=="hide" then
-            if elapsed>=rConfig.voidspam.currentduration then
-                rConfig.voidspam.phase="shoot"
-                rConfig.voidspam.currentduration=randVs(rConfig.voidspam.shoot_min,rConfig.voidspam.shoot_max)
-                rConfig.voidspam.lastswitch=now
-            end
-        else
-            rConfig.voidspam.phase="shoot"
-            rConfig.voidspam.currentduration=randVs(rConfig.voidspam.shoot_min,rConfig.voidspam.shoot_max)
-            rConfig.voidspam.lastswitch=now
-        end
-    end
-
-    local function rIsHiding() return rConfig.voidspam.enabled and rConfig.voidspam.phase=="hide" end
-
-    local function rStopSync()
-        if not rConfig.state.csyncactive then return end
-        if rConfig.orbit.connection then rConfig.orbit.connection:Disconnect();rConfig.orbit.connection=nil end
-        rConfig.state.csyncactive=false;rConfig.orbit.active=false;clrVoidSnap()
-        rConfig.voidspam.phase=nil
-        if rConfig.orbit.savedpos and rlocalfighter and rlocalfighter.Entity and rlocalfighter.Entity.RootPart then
-            pcall(function() rlocalfighter.Entity.RootPart.CFrame=rConfig.orbit.savedpos end)
-        end
-        rConfig.orbit.serverpos=nil;rConfig.orbit.savedpos=nil;rOldPos=nil
-    end
-
-    local function rStartSync()
-        if rConfig.state.csyncactive then return end
-        if rConfig.target.immune then return end
-        if not rConfig.target.character or not rValid(rConfig.target.character) then return end
-        rEqSlot();rConfig.state.csyncactive=true;rConfig.orbit.active=true
-        local settings=rAtkCfg()
-        rConfig.orbit.height=settings.height;rConfig.orbit.radius=settings.radius or 0
-        if not rConfig.orbit.savedpos then
-            if rlocalfighter and rlocalfighter.Entity and rlocalfighter.Entity.RootPart then
-                rConfig.orbit.savedpos=rlocalfighter.Entity.RootPart.CFrame
-            end
-        end
-        rConfig.orbit.connection=trackConn(RunService.Heartbeat:Connect(function(dt)
-            if not rConfig.state.csyncactive then return end
-            if rConfig.target.immune then rStopSync();return end
-            if not rConfig.target.character or not rValid(rConfig.target.character) then rStopSync();return end
-            if not rlocalfighter or not rlocalfighter.Entity or not rlocalfighter.Entity.RootPart then rStopSync();return end
-            rOldPos=rlocalfighter.Entity.RootPart.CFrame
-            local _weapon=rGetWeapon();local checksling=rIsSling(_weapon)
-            rEqSlot()
-            if not checksling and rConfig.voidspam.enabled and not rConfig.target.immune then
-                rVoidSpamTick()
-                if rConfig.voidspam.phase=="hide" then
-                    local rx=math.random(-10000,10000);local rz=math.random(-10000,10000)
-                    rConfig.orbit.serverpos=Vector3.new(rx,-99999999999,rz)
-                    pcall(function() rlocalfighter.Entity.RootPart.CFrame=CFrame.new(rConfig.orbit.serverpos) end)
-                    return
+local function setFastCooldowns()
+    pcall(function()
+        for _, v in pairs(getgc(true)) do
+            if type(v) == "table" then
+                for _, field in ipairs({"Cooldown", "AttackCooldown", "UseDelay", "FireCooldown"}) do
+                    if rawget(v, field) then rawset(v, field, 0.001) end
                 end
             end
-            if not rConfig.target.character then rStopSync();return end
-            local root=rConfig.target.character:FindFirstChild("HumanoidRootPart")
-            if not root then rStopSync();return end
-            if not checksling and rIsHiding() then
-                local rx=math.random(-10000,10000);local rz=math.random(-10000,10000)
-                rConfig.orbit.serverpos=Vector3.new(rx,-99999999999,rz)
-                pcall(function() rlocalfighter.Entity.RootPart.CFrame=CFrame.new(rConfig.orbit.serverpos) end)
-                return
-            end
-            local targetpos=rOrbBase(root)
-            rConfig.orbit.angle=rConfig.orbit.angle+(rConfig.orbit.speed*dt)
-            local offset=Vector3.new(
-                math.cos(rConfig.orbit.angle)*rConfig.orbit.radius,
-                rConfig.orbit.height,
-                math.sin(rConfig.orbit.angle)*rConfig.orbit.radius
-            )
-            rConfig.orbit.serverpos=targetpos+offset
-            pcall(function()
-                local currentPos=rlocalfighter.Entity.RootPart.CFrame
-                local newPos=CFrame.new(rConfig.orbit.serverpos)
-                if (newPos.Position-currentPos.Position).Magnitude<2000 then
-                    rlocalfighter.Entity.RootPart.CFrame=newPos
-                    rConfig.orbit.savedpos=currentPos
-                end
-            end)
-        end))
-    end
-
-    -- ── Ammo Tick ─────────────────────────────────────────────────
-
-    local function rTickAmmo()
-        if rIsInfinite() then rConfig.state.outofammo=false;rConfig.state.reloading=false;return end
-        local current,_,melee=rGetAmmo()
-        if melee then rConfig.state.outofammo=false
-        else rConfig.state.outofammo=(tonumber(current) or 0)<=0 end
-        local reloading=false
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if lf and lf.EquippedItem then
-            pcall(function()
-                for _,key in ipairs({"Reloading","IsReloading","IsReload"}) do
-                    local v=lf.EquippedItem:Get(key)
-                    if v==true or v==1 then reloading=true;return end
-                end
-            end)
-        end
-        if reloading and not rConfig.state.reloading then rConfig.state.reloadStartedAt=tick()
-        elseif not reloading then rConfig.state.reloadStartedAt=0 end
-        rConfig.state.reloading=reloading
-    end
-
-    local function rCanUse()
-        local char=lp.Character;if not char then return false end
-        local hum=char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health<=0 then return false end
-        if rIsInfinite() then return true end
-        local current,_,melee=rGetAmmo()
-        if current==nil then return true end
-        return current>0 or melee
-    end
-
-    -- ── Auto Shoot — FULLY NIL GUARDED ───────────────────────────
-
-    local function rAutoShoot()
-        -- Guard: hiding phase
-        if rIsHiding() and not rIsSling(rGetWeapon()) then return end
-        if not rConfig.target.enabled or not rConfig.target.character or not rConfig.target.autoshoot then return end
-        if rConfig.target.immune then return end
-
-        -- ✅ Guard: modules must exist
-        if not rageModules.utility then
-            warn("[rAutoShoot] utility module nil — skipping shot")
-            return
-        end
-        if not rageModules.enums then
-            warn("[rAutoShoot] enums module nil — skipping shot")
-            return
-        end
-
-        local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-        if not lf or not lf.EquippedItem then return end
-
-        if not rIsInfinite() then
-            if rConfig.state.reloading or rConfig.state.outofammo then return end
-            if not rCanUse() then return end
-        end
-
-        local targetChar=rConfig.target.character
-        if not rValid(targetChar) then return end
-
-        local hitPart=rHitpartFromName(targetChar,rConfig.target.hitpart)
-        if not hitPart or not hitPart.Parent then return end
-
-        -- Build shoot position
-        local shootPos
-        local myRoot=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-        if rConfig.state.csyncactive and rConfig.orbit.serverpos then
-            shootPos=rConfig.orbit.serverpos
-        else
-            shootPos=myRoot and myRoot.Position or Vector3.new()
-        end
-
-        local targetPos=rPredict(hitPart,shootPos)
-
-        -- ✅ FIX: Use buildShotData — full nil guard
-        local data=buildShotData(rageModules.utility,shootPos,targetPos,hitPart)
-        if not data then
-            warn("[rAutoShoot] buildShotData returned nil — skipping shot")
-            return
-        end
-
-        local equipped=lf.EquippedItem
-        local objectId=nil
-        pcall(function() objectId=equipped:Get("ObjectID") end)
-
-        if not objectId then
-            warn("[rAutoShoot] ObjectID is nil — skipping shot")
-            return
-        end
-
-        -- ✅ FIX: Use safeFireShot — full nil guard
-        local UseItem=ReplicatedStorage.Remotes.Replication.Fighter.UseItem
-        local attempts=math.clamp(math.floor(rConfig.target.shootAttempts or 1),1,3)
-        for _=1,attempts do
-            safeFireShot(UseItem,rageModules.enums,objectId,data)
-        end
-    end
-
-    -- ── Camera Hook ───────────────────────────────────────────────
-
-    if rageModules.camcontrol and rageModules.camcontrol.Update then
-        local oldcamupdate=rageModules.camcontrol.Update
-        rageModules.camcontrol.Update=function(...)
-            if rConfig.state.csyncactive
-                and rlocalfighter
-                and rlocalfighter.Entity
-                and rlocalfighter.Entity.RootPart
-                and rOldPos
-            then
-                pcall(function() rlocalfighter.Entity.RootPart.CFrame=rOldPos end)
-            end
-            return oldcamupdate(...)
-        end
-    end
-
-    -- ── Immune System ─────────────────────────────────────────────
-
-    local immuneList={}
-    trackConn(RunService.Heartbeat:Connect(function()
-        for _,plr in pairs(Players:GetPlayers()) do
-            if plr==lp then continue end
-            local char=plr.Character
-            local root=char and char:FindFirstChild("HumanoidRootPart")
-            local immune=root and root:FindFirstChild("Attachment")~=nil
-            if immune and not immuneList[plr.Name] then
-                immuneList[plr.Name]=true
-                if rConfig.target.lastplayer==plr then
-                    rConfig.target.immune=true;clrVoidSnap();rStopSync()
-                end
-            elseif not immune and immuneList[plr.Name] then
-                immuneList[plr.Name]=nil
-                if rConfig.target.lastplayer==plr then
-                    rConfig.target.immune=false
-                    if rConfig.target.enabled
-                        and rConfig.target.character
-                        and rValid(rConfig.target.character)
-                    then rStartSync() end
-                end
-            end
-        end
-    end))
-
-    -- ── Target Management ─────────────────────────────────────────
-
-    local function rClearTarget()
-        rConfig.target.enabled=false;rStopSync()
-        rConfig.target.character=nil;rConfig.target.lastchar=nil
-        rConfig.target.lastplayer=nil;rConfig.target.immune=false
-    end
-
-    local function rSetTarget(char)
-        if not char then return end
-        local targetplr=Players:GetPlayerFromCharacter(char)
-        rConfig.target.enabled=true;rConfig.target.character=char
-        rConfig.target.lastchar=char;rConfig.target.lastplayer=targetplr
-        rConfig.target.immune=false
-        local root=char:FindFirstChild("HumanoidRootPart")
-        if root and root:FindFirstChild("Attachment") then
-            rConfig.target.immune=true
-        else
-            rEqSlot();rStartSync()
-        end
-    end
-
-    -- ── Main Heartbeat ────────────────────────────────────────────
-
-    trackConn(RunService.Heartbeat:Connect(function()
-        -- ✅ Always tick ammo safely
-        pcall(rTickAmmo)
-
-        if rConfig.target.auto and not rConfig.target.manualkey then
-            local current,_,melee=rGetAmmo()
-            local hasammo=current==nil or current>0 or melee
-            if hasammo and not rConfig.state.reloading then
-                if not rConfig.target.enabled
-                    or not rConfig.target.character
-                    or not rValid(rConfig.target.character)
-                then
-                    local newtarget=rNearest()
-                    if newtarget then
-                        if rConfig.target.enabled then rStopSync() end
-                        rSetTarget(newtarget)
-                    end
-                end
-            end
-        end
-
-        if rConfig.target.enabled and rConfig.target.character then
-            if not rValid(rConfig.target.character) then rClearTarget();return end
-            rEqSlot()
-            if rConfig.target.autoshoot and not rConfig.target.immune then
-                -- ✅ Wrapped in pcall so one shot failure doesnt break loop
-                pcall(rAutoShoot)
-            end
-            if rConfig.prediction.enabled then pcall(rUpdateVel) end
-        end
-    end))
-
-    -- ── Ragebot UI ────────────────────────────────────────────────
-
-    RGMain:Toggle({Name="Enable Ragebot",Flag="RageOn",Default=false,Callback=function(v)
-        rConfig.target.rageMasterOn=v
-        if not v then rClearTarget();notify("Ragebot","Off") else notify("Ragebot","Active!") end
-    end})
-    RGMain:Toggle({Name="Auto Target",Flag="RageAuto",    Default=false,Callback=function(v) rConfig.target.auto=v end})
-    RGMain:Toggle({Name="Auto Shoot", Flag="RageAutoShot",Default=true, Callback=function(v) rConfig.target.autoshoot=v end})
-    RGMain:Toggle({Name="Prediction", Flag="RagePred",    Default=false,Callback=function(v) rConfig.prediction.enabled=v end})
-    RGMain:Toggle({Name="Void Spam",  Flag="RageVoidSpam",Default=false,Callback=function(v) rConfig.voidspam.enabled=v end})
-    RGMain:Dropdown({Name="Weapon",Flag="RageWeapon",Default={"primary"},Items={"primary","secondary","melee"},Multi=false,
-        Callback=function(v) rConfig.target.weaponPick=type(v)=="table" and v[1] or v end})
-    RGMain:Dropdown({Name="Hit Part",Flag="RageHitPart",Default={"Head"},Items={"Head","UpperTorso","HumanoidRootPart","Closest","Random"},Multi=false,
-        Callback=function(v) rConfig.target.hitpart=type(v)=="table" and v[1] or v end})
-    RGMain:Slider({Name="Shoot Attempts",Flag="RageAttempts",Min=1,Max=3,Default=1,   Suffix="x",   Callback=function(v) rConfig.target.shootAttempts=v end})
-    RGMain:Slider({Name="Orbit Speed",   Flag="RageOrbitSpd",Min=100,Max=20000,Default=9000,Suffix=" s",Callback=function(v) rConfig.orbit.speed=v end})
-    RGMain:Slider({Name="Orbit Height",  Flag="RageOrbitH",  Min=-10,Max=20,Default=1,Suffix=" s",  Callback=function(v) rConfig.orbit.height=v end})
-    RGMain:Slider({Name="Orbit Radius",  Flag="RageOrbitR",  Min=0,Max=20,Default=0,  Suffix=" s",  Callback=function(v) rConfig.orbit.radius=v end})
-    RGMain:Slider({Name="Pred Mult",     Flag="RagePredMult",Min=50,Max=300,Default=120,Suffix="x0.01",Callback=function(v) rConfig.prediction.multiplier=v*0.01 end})
-
-    RGAdv:Toggle({Name="Custom Offsets",  Flag="RageCustom",Default=false,Callback=function(v) rConfig.target.attackCustomEnabled=v end})
-    RGAdv:Slider({Name="Custom Height",   Flag="RageCH",Min=-10,Max=30,Default=2,Suffix=" s",  Callback=function(v) rConfig.target.customHeight=v end})
-    RGAdv:Slider({Name="Custom Front",    Flag="RageCF",Min=-10,Max=10,Default=0,Suffix=" s",  Callback=function(v) rConfig.target.customFront=v end})
-    RGAdv:Slider({Name="Custom Side",     Flag="RageCS",Min=-10,Max=10,Default=0,Suffix=" s",  Callback=function(v) rConfig.target.customSide=v end})
-    RGAdv:Slider({Name="Custom Vertical", Flag="RageCV",Min=-10,Max=10,Default=0,Suffix=" s",  Callback=function(v) rConfig.target.customVertical=v end})
-    RGAdv:Slider({Name="Under Offset",    Flag="RageUO",Min=1,Max=20,Default=4,  Suffix=" s",  Callback=function(v) rConfig.target.underOffset=v end})
-    RGAdv:Slider({Name="Melee Feet Drop", Flag="RageMFD",Min=1,Max=10,Default=35,Suffix="x0.1",Callback=function(v) rConfig.target.meleeFeetDrop=v*0.1 end})
-    RGAdv:Dropdown({Name="Attack Position",Flag="RageAtkPos",Default={"default"},Items={"default","under"},Multi=false,
-        Callback=function(v) rConfig.target.attackPosition=type(v)=="table" and v[1] or v end})
-    RGAdv:Slider({Name="VoidSpam Shoot Min",Flag="RageVSShMin",Min=1,Max=20,Default=10,Suffix="x0.1s",Callback=function(v) rConfig.voidspam.shoot_min=v*0.1 end})
-    RGAdv:Slider({Name="VoidSpam Shoot Max",Flag="RageVSShMax",Min=1,Max=20,Default=10,Suffix="x0.1s",Callback=function(v) rConfig.voidspam.shoot_max=v*0.1 end})
-    RGAdv:Slider({Name="VoidSpam Hide Min", Flag="RageVSHiMin",Min=1,Max=20,Default=10,Suffix="x0.1s",Callback=function(v) rConfig.voidspam.hide_min=v*0.1 end})
-    RGAdv:Slider({Name="VoidSpam Hide Max", Flag="RageVSHiMax",Min=1,Max=20,Default=10,Suffix="x0.1s",Callback=function(v) rConfig.voidspam.hide_max=v*0.1 end})
-
-    -- On Player Section
-    local onPlayerRunning=false;local onPlayerConn=nil
-    local onPlayerCfg={enabled=false,target="None",part="Head",delay=0.1}
-
-    local function getPlayerNames()
-        local names={"None"}
-        for _,p in ipairs(Players:GetPlayers()) do if p~=lp then table.insert(names,p.Name) end end
-        return names
-    end
-
-    local function startOnPlayer()
-        if onPlayerConn then onPlayerConn:Disconnect();onPlayerConn=nil end
-        onPlayerRunning=false
-        onPlayerConn=trackConn(RunService.Heartbeat:Connect(function()
-            if not onPlayerCfg.enabled or onPlayerRunning then return end
-            if not onPlayerCfg.target or onPlayerCfg.target=="None" then return end
-
-            -- ✅ Guard modules
-            if not rageModules.utility or not rageModules.enums then return end
-
-            local lf=rageModules.fighter and rageModules.fighter.LocalFighter
-            if not lf or not lf.EquippedItem then return end
-
-            local tp,tc=nil,nil
-            for _,p in ipairs(Players:GetPlayers()) do
-                if p.Name==onPlayerCfg.target or p.DisplayName==onPlayerCfg.target then
-                    if isValidTarget(p) then
-                        local char=p.Character
-                        tp=bPart(char,onPlayerCfg.part) or char:FindFirstChild("Head")
-                        tc=char
-                    end
-                    break
-                end
-            end
-            if not tp or not tc then return end
-            local hum=tc:FindFirstChildOfClass("Humanoid")
-            if not hum or hum.Health<=0 then return end
-
-            onPlayerRunning=true
-            task.spawn(function()
-                local ok,err=pcall(function()
-                    local myRoot=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                    local so=myRoot and myRoot.Position or cam.CFrame.Position
-                    local tPos=tp.Position
-
-                    -- ✅ FIX: buildShotData nil guard
-                    local data=buildShotData(rageModules.utility,so,tPos,tp)
-                    if not data then return end
-
-                    local objectId=nil
-                    pcall(function() objectId=lf.EquippedItem:Get("ObjectID") end)
-
-                    -- ✅ FIX: safeFireShot nil guard
-                    local UseItem=ReplicatedStorage.Remotes.Replication.Fighter.UseItem
-                    safeFireShot(UseItem,rageModules.enums,objectId,data)
-                    task.wait(onPlayerCfg.delay)
-                end)
-                if not ok then warn("[OnPlayer] "..tostring(err)) end
-                onPlayerRunning=false
-            end)
-        end))
-    end
-
-    RGOnP:Toggle({Name="Enable On Player",Flag="RageOnPlayer",Default=false,Callback=function(v)
-        onPlayerCfg.enabled=v
-        if v then
-            startOnPlayer()
-            notify("On Player","Active! Target: "..(onPlayerCfg.target or "None"))
-        else
-            if onPlayerConn then onPlayerConn:Disconnect();onPlayerConn=nil end
-            notify("On Player","Off")
-        end
-    end})
-    local opDrop=RGOnP:Dropdown({Name="Target Player",Flag="RageOnPlayerTarget",Default={"None"},Items=getPlayerNames(),Multi=false,
-        Callback=function(v) onPlayerCfg.target=type(v)=="table" and v[1] or v end})
-    RGOnP:Dropdown({Name="Hit Part",Flag="RageOnPlayerPart",Default={"Head"},Items=PARTS,Multi=false,
-        Callback=function(v) onPlayerCfg.part=type(v)=="table" and v[1] or v end})
-    RGOnP:Slider({Name="Shot Delay",Flag="RageOnPlayerDelay",Min=1,Max=50,Default=10,Suffix="x0.01s",
-        Callback=function(v) onPlayerCfg.delay=v*0.01 end})
-    RGOnP:Button({Name="🔄 Refresh Players",Callback=function()
-        pcall(function() opDrop:Refresh(getPlayerNames()) end)
-        notify("On Player","Refreshed!",2)
-    end})
-    RGMain:Button({Name="Lock Nearest",Callback=function()
-        local char=rNearest()
-        if char then
-            rSetTarget(char)
-            local p=Players:GetPlayerFromCharacter(char)
-            notify("Ragebot","Locked: "..(p and p.Name or "?"))
-        else
-            notify("Ragebot","No target found",3)
-        end
-    end})
-    RGMain:Button({Name="Clear Target",Callback=function()
-        rClearTarget();notify("Ragebot","Target cleared")
-    end})
-
-    -- ============================================================
-    --   WALLBANG
-    -- ============================================================
-
-    local WB={enabled=false,hitPart="Head"}
-    local wbState={}
-    do
-        local __gm=GunModule;local __um=util
-        function wbState:init()
-            self.active=false;self.target=nil;self.desync=false
-            self.conn1=nil;self.conn2=nil;self.task1=nil
-            self.oldfunc=nil;self.hooked=false
-        end
-        function wbState:find()
-            local best,bd=nil,math.huge
-            for _,p in next,Players:GetPlayers() do
-                if p==lp or not isValidTarget(p) then continue end
-                local c=p.Character;if not c then continue end
-                local head=c:FindFirstChild("Head")
-                local hum=c:FindFirstChildWhichIsA("Humanoid")
-                if not (head and hum and hum.Health>0) then continue end
-                local d=(cam.CFrame.Position-head.Position).Magnitude
-                if d<bd then bd=d;best=p end
-            end
-            return best
-        end
-        function wbState:getHitPart(char)
-            return WB.hitPart=="Head" and char:FindFirstChild("Head")
-                or char:FindFirstChild("UpperTorso") or char:FindFirstChild("HumanoidRootPart")
-        end
-        function wbState:desyncStop()
-            self.desync=false
-            if self.conn2 then self.conn2:Disconnect();self.conn2=nil end
-        end
-        function wbState:desyncStart(tp2)
-            if self.conn2 then self.conn2:Disconnect() end
-            self.desync=true
-            self.conn2=trackConn(RunService.Heartbeat:Connect(function()
-                if not self.desync then return end
-                local root=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                if not root then return end
-                local tc2=tp2.Character;if not tc2 then self:desyncStop();return end
-                local h2=tc2:FindFirstChild("Head");if not h2 then self:desyncStop();return end
-                local sCF=root.CFrame;local sLV=root.AssemblyLinearVelocity;local sAV=root.AssemblyAngularVelocity
-                root.CFrame=h2.CFrame*CFrame.new(0,-5,0)
-                RunService:BindToRenderStep("__wbR",101,function()
-                    pcall(function()
-                        root.CFrame=sCF
-                        root.AssemblyLinearVelocity=sLV
-                        root.AssemblyAngularVelocity=sAV
-                    end)
-                    RunService:UnbindFromRenderStep("__wbR")
-                end)
-            end))
-        end
-        function wbState:setup()
-            if self.conn1 then self.conn1:Disconnect() end
-            self.conn1=trackConn(RunService.Heartbeat:Connect(function()
-                if not self.active then return end;self.target=self:find()
-            end))
-            if not __gm or self.hooked then return end
-            local origSS=__gm.StartShooting;if not origSS then return end
-            self.oldfunc=origSS
-            local hookOk=pcall(function()
-                rawset(__gm,"StartShooting",function(gSelf,...)
-                    local results={origSS(gSelf,...)}
-                    if not gSelf.ClientFighter or not gSelf.ClientFighter.IsLocalPlayer then
-                        return table.unpack(results)
-                    end
-                    local sd=results[3]
-                    if not sd or typeof(sd)~="table" then return table.unpack(results) end
-                    results[4]=true
-                    local tgP=self.target
-                    if not self.active or not tgP or not tgP.Character then return table.unpack(results) end
-                    self:desyncStart(tgP);task.wait(0.1)
-                    if self.task1 then task.cancel(self.task1);self.task1=nil end
-                    local ap=self:getHitPart(tgP.Character);if not ap then return table.unpack(results) end
-                    local tPos=ap.Position;local tCF2=ap.CFrame
-                    local oPos=tPos-Vector3.new(0,3,0)
-                    if __um then
-                        pcall(function()
-                            -- ✅ FIX: Use safeEncodeCFrame for wallbang too
-                            sd[utf8.char(0)]=safeEncodeCFrame(__um,CFrame.new(oPos,tPos))
-                            sd[utf8.char(1)]=safeEncodeCFrame(__um,CFrame.new(tPos))
-                            sd[utf8.char(2)]=ap
-                            sd[utf8.char(3)]=safeEncodeCFrame(__um,tCF2:ToObjectSpace(CFrame.new(
-                                tPos+Vector3.new(
-                                    math.random(-1,1)*0.5,
-                                    math.random(-1,1)*0.5,
-                                    math.random(-1,1)*0.5
-                                )
-                            )))
-                            if sd.Hitbox then sd.Hitbox=WB.hitPart=="Head" and "Head" or "Body" end
-                        end)
-                    end
-                    self.task1=task.delay(0.15,function() self:desyncStop() end)
-                    return table.unpack(results)
-                end)
-            end)
-            self.hooked=hookOk
-            if not hookOk then
-                warn("[Wallbang] Failed to hook StartShooting")
-                self.oldfunc=nil
-            end
-        end
-        function wbState:Start()
-            self.active=true;self:setup();notify("Wallbang","Active!")
-        end
-        function wbState:Shutdown()
-            self.active=false
-            if self.conn1 then self.conn1:Disconnect();self.conn1=nil end
-            if self.conn2 then self.conn2:Disconnect();self.conn2=nil end
-            if self.task1 then task.cancel(self.task1);self.task1=nil end
-            if self.hooked and self.oldfunc and __gm then
-                pcall(function() rawset(__gm,"StartShooting",self.oldfunc) end)
-                self.oldfunc=nil;self.hooked=false
-            end
-            notify("Wallbang","Off")
-        end
-    end
-    wbState:init()
-
-    WBMain:Toggle({Name="Enable Wallbang",Flag="WBOn",Default=false,
-        Callback=function(v) WB.enabled=v;if v then wbState:Start() else wbState:Shutdown() end end})
-    WBMain:Dropdown({Name="Hit Part",Flag="WBPart",Default={"Head"},Items={"Head","Body"},Multi=false,
-        Callback=function(v) WB.hitPart=type(v)=="table" and v[1] or v end})
-    WBMain:Button({Name="Debug Target",Callback=function()
-        local tg=wbState:find();notify("Wallbang",tg and "Target: "..tg.Name or "No target",3)
-    end})
-
-    -- ============================================================
-    --   HIT SOUND
-    -- ============================================================
-
-    local hsCfg={enabled=false,soundId="rbxassetid://4764109000",volume=1,pitch=1}
-    local hsConn=nil
-
-    local function findVM()
-        local r=nil
-        pcall(function()
-            for _,v in pairs(lp.PlayerScripts:GetDescendants()) do
-                if v.Name=="ClientViewModel" then r=v;break end
-            end
-        end)
-        return r
-    end
-
-    local function applyHS(sId,vol,pit)
-        if hsConn then hsConn:Disconnect();hsConn=nil end
-        task.spawn(function()
-            local vm=findVM();if not vm then return end
-            for _,v in pairs(vm:GetChildren()) do
-                if v:IsA("Sound") and v.SoundId~="rbxassetid://16537449730" then
-                    pcall(function() v.SoundId=sId;v.Pitch=pit;v.Volume=vol end)
-                end
-            end
-            hsConn=trackConn(vm.ChildAdded:Connect(function(v)
-                if not hsCfg.enabled or not v:IsA("Sound") then return end
-                if v.SoundId=="rbxassetid://16537449730" then return end
-                task.defer(function()
-                    pcall(function() v.SoundId=sId;v.Pitch=pit;v.Volume=vol end)
-                end)
-            end))
-        end)
-    end
-
-    HSMain:Toggle({Name="Enable Hit Sound",Flag="HSOn",Default=false,Callback=function(v)
-        hsCfg.enabled=v
-        if v then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch);notify("Hit Sound","Active!")
-        else if hsConn then hsConn:Disconnect();hsConn=nil end;notify("Hit Sound","Off") end
-    end})
-    HSMain:Dropdown({Name="Sound",Flag="HSSound",Default={"Rust"},Items=HIT_SOUND_LIST,Multi=false,
-        Callback=function(v)
-            local sel=type(v)=="table" and v[1] or v
-            hsCfg.soundId=HIT_SOUNDS[sel] or hsCfg.soundId
-            if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
-        end})
-    HSMain:Slider({Name="Volume",Flag="HSVol",Min=1,Max=100,Default=100,Suffix="%",
-        Callback=function(v) hsCfg.volume=v/100;if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end end})
-    HSMain:Slider({Name="Pitch",Flag="HSPitch",Min=1,Max=30,Default=10,Suffix="x0.1",
-        Callback=function(v) hsCfg.pitch=v*0.1;if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end end})
-
-    -- ============================================================
-    --   ESP
-    -- ============================================================
-
-    local espCfg={
-        playerEnabled=false,box=true,boxColor=Color3.fromRGB(255,255,255),
-        boxFill=false,boxFillColor=Color3.fromRGB(255,255,255),boxFillTrans=0.7,
-        name=true,nameColor=Color3.fromRGB(255,255,255),nameSize=13,
-        health=true,tracer=true,tracerColor=Color3.fromRGB(0,200,255),tracerThick=1,
-        tracerOrigin="bottom",teamCheck=true,visCheck=false,
-        visColor=Color3.fromRGB(255,100,100),nonVisColor=Color3.fromRGB(255,255,255),
-        maxDist=1000,
-        dummyEnabled=false,dummyBox=true,dummyBoxColor=Color3.fromRGB(255,165,0),
-        dummyName=true,dummyNameColor=Color3.fromRGB(255,165,0),
-        dummyHealth=true,dummyTracer=false,dummyTracerColor=Color3.fromRGB(255,165,0),
-    }
-
-    local espObjects={}
-
-    local function makeEspObj(player)
-        local obj={
-            player=player,
-            box=Drawing.new("Square"),boxFill=Drawing.new("Square"),
-            name=Drawing.new("Text"),health=Drawing.new("Square"),
-            healthFg=Drawing.new("Square"),tracer=Drawing.new("Line"),
-        }
-        obj.box.Visible=false;obj.box.Thickness=1.5;obj.box.Filled=false;obj.box.Color=Color3.fromRGB(255,255,255)
-        obj.boxFill.Visible=false;obj.boxFill.Filled=true;obj.boxFill.Transparency=0.7;obj.boxFill.Color=Color3.fromRGB(255,255,255)
-        obj.name.Visible=false;obj.name.Size=13;obj.name.Font=2;obj.name.Center=true;obj.name.Outline=true;obj.name.Color=Color3.fromRGB(255,255,255)
-        obj.health.Visible=false;obj.health.Filled=true;obj.health.Color=Color3.fromRGB(50,50,50)
-        obj.healthFg.Visible=false;obj.healthFg.Filled=true;obj.healthFg.Color=Color3.fromRGB(50,255,50)
-        obj.tracer.Visible=false;obj.tracer.Thickness=1;obj.tracer.Color=Color3.fromRGB(0,200,255)
-        return obj
-    end
-
-    local function removeEspObj(obj)
-        if not obj then return end
-        for _,v in pairs(obj) do
-            if typeof(v)=="table" and v.Remove then
-                pcall(function() v.Visible=false;v:Remove() end)
-            end
-        end
-    end
-
-    local function getEspObj(player)
-        if not espObjects[player] then espObjects[player]=makeEspObj(player) end
-        return espObjects[player]
-    end
-
-    local function cleanEsp()
-        for p,obj in pairs(espObjects) do
-            if not p or not p.Parent then removeEspObj(obj);espObjects[p]=nil end
-        end
-    end
-
-    local function updatePlayerEsp(p)
-        local obj=getEspObj(p)
-        if not espCfg.playerEnabled then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        if not isValidTarget(p) then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        if espCfg.teamCheck and sameTm(p) then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        local char=p.Character
-        local hrp=char and char:FindFirstChild("HumanoidRootPart")
-        local hum=char and char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        local myHRP=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-        if myHRP and (myHRP.Position-hrp.Position).Magnitude>espCfg.maxDist then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        local rootSP,rootOn=cam:WorldToViewportPoint(hrp.Position)
-        if not rootOn then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        local head=char:FindFirstChild("Head")
-        local headSP,headOn=head and cam:WorldToViewportPoint(head.Position+Vector3.new(0,0.7,0))
-        local footSP,footOn=cam:WorldToViewportPoint(hrp.Position-Vector3.new(0,3,0))
-        if not (headOn and footOn) then
-            for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;return
-        end
-        local h=math.abs(headSP.Y-footSP.Y);local w=h*0.5
-        local cx=rootSP.X;local bx=cx-w/2;local by=headSP.Y
-        local vis=espCfg.visCheck and isVis(cam.CFrame.Position,hrp)
-        local boxCol=(vis==false) and espCfg.visColor or espCfg.boxColor
-        if espCfg.box then
-            obj.box.Visible=true;obj.box.Color=boxCol
-            obj.box.Position=Vector2.new(bx,by);obj.box.Size=Vector2.new(w,h)
-        else obj.box.Visible=false end
-        if espCfg.boxFill then
-            obj.boxFill.Visible=true;obj.boxFill.Color=espCfg.boxFillColor;obj.boxFill.Transparency=espCfg.boxFillTrans
-            obj.boxFill.Position=Vector2.new(bx,by);obj.boxFill.Size=Vector2.new(w,h)
-        else obj.boxFill.Visible=false end
-        if espCfg.name then
-            obj.name.Visible=true;obj.name.Text=p.Name;obj.name.Color=espCfg.nameColor;obj.name.Size=espCfg.nameSize
-            obj.name.Position=Vector2.new(cx,by-espCfg.nameSize-2)
-        else obj.name.Visible=false end
-        if espCfg.health then
-            local hp=hum.Health;local maxhp=hum.MaxHealth;local hpPct=math.clamp(hp/math.max(maxhp,1),0,1)
-            local barX=bx-6;local barW=4;local barH=h
-            local col=Color3.fromRGB(math.floor((1-hpPct)*255),math.floor(hpPct*255),0)
-            obj.health.Visible=true;obj.health.Position=Vector2.new(barX,by);obj.health.Size=Vector2.new(barW,barH);obj.health.Color=Color3.fromRGB(30,30,30)
-            obj.healthFg.Visible=true;obj.healthFg.Position=Vector2.new(barX,by+barH*(1-hpPct));obj.healthFg.Size=Vector2.new(barW,barH*hpPct);obj.healthFg.Color=col
-        else obj.health.Visible=false;obj.healthFg.Visible=false end
-        if espCfg.tracer then
-            local origin=espCfg.tracerOrigin=="bottom" and Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y) or scr()
-            obj.tracer.Visible=true;obj.tracer.Color=espCfg.tracerColor;obj.tracer.Thickness=espCfg.tracerThick
-            obj.tracer.From=origin;obj.tracer.To=Vector2.new(rootSP.X,rootSP.Y)
-        else obj.tracer.Visible=false end
-    end
-
-    -- Dummy ESP
-    local dummyEspObjects={}
-
-    local function makeDummyEsp(dummy)
-        local obj={
-            dummy=dummy,
-            box=Drawing.new("Square"),name=Drawing.new("Text"),
-            health=Drawing.new("Square"),healthFg=Drawing.new("Square"),
-            tracer=Drawing.new("Line"),label=Drawing.new("Text"),
-        }
-        obj.box.Visible=false;obj.box.Thickness=1.5;obj.box.Filled=false;obj.box.Color=Color3.fromRGB(255,165,0)
-        obj.name.Visible=false;obj.name.Size=12;obj.name.Font=2;obj.name.Center=true;obj.name.Outline=true;obj.name.Color=Color3.fromRGB(255,165,0)
-        obj.health.Visible=false;obj.health.Filled=true;obj.health.Color=Color3.fromRGB(30,30,30)
-        obj.healthFg.Visible=false;obj.healthFg.Filled=true;obj.healthFg.Color=Color3.fromRGB(255,165,0)
-        obj.tracer.Visible=false;obj.tracer.Thickness=1;obj.tracer.Color=Color3.fromRGB(255,165,0)
-        obj.label.Visible=false;obj.label.Size=11;obj.label.Font=2;obj.label.Center=true;obj.label.Outline=true;obj.label.Color=Color3.fromRGB(255,200,100)
-        return obj
-    end
-
-    local function removeDummyEsp(obj)
-        if not obj then return end
-        for _,v in pairs(obj) do
-            if typeof(v)=="table" and v.Remove then pcall(function() v.Visible=false;v:Remove() end) end
-        end
-    end
-
-    local function getDummies()
-        local dummies={}
-        local sre=ws:FindFirstChild("ShootingRangeEntities");if not sre then return dummies end
-        local dpsDummy=sre:FindFirstChild("DPS Dummy") or sre:FindFirstChild("DPS_Dummy")
-        if dpsDummy then table.insert(dummies,{model=dpsDummy,label="DPS Dummy"}) end
-        local normalDummy=sre:FindFirstChild("Dummy")
-        if normalDummy then table.insert(dummies,{model=normalDummy,label="Dummy"}) end
-        for _,child in pairs(sre:GetChildren()) do
-            if child.Name:lower():find("dummy") then
-                local already=false
-                for _,d in ipairs(dummies) do if d.model==child then already=true;break end end
-                if not already then table.insert(dummies,{model=child,label=child.Name}) end
-            end
-        end
-        return dummies
-    end
-
-    local function updateDummyEsp()
-        for key,obj in pairs(dummyEspObjects) do
-            if not key or not key.Parent then removeDummyEsp(obj);dummyEspObjects[key]=nil end
-        end
-        if not espCfg.dummyEnabled then
-            for _,obj in pairs(dummyEspObjects) do
-                for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end
-            end;return
-        end
-        local dummies=getDummies()
-        for _,entry in ipairs(dummies) do
-            local model=entry.model;local label=entry.label
-            if not dummyEspObjects[model] then dummyEspObjects[model]=makeDummyEsp(model) end
-            local obj=dummyEspObjects[model]
-            local hrp=model:FindFirstChild("HumanoidRootPart")
-            local hum=model:FindFirstChildOfClass("Humanoid")
-            local head=model:FindFirstChild("Head")
-            if not hrp or not hum then
-                for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;continue
-            end
-            local rootSP,rootOn=cam:WorldToViewportPoint(hrp.Position)
-            if not rootOn then
-                for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;continue
-            end
-            local headSP,headOn=head and cam:WorldToViewportPoint(head.Position+Vector3.new(0,0.7,0))
-            local footSP,footOn=cam:WorldToViewportPoint(hrp.Position-Vector3.new(0,3,0))
-            if not (headOn and footOn) then
-                for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end;continue
-            end
-            local h2=math.abs(headSP.Y-footSP.Y);local w2=h2*0.55
-            local cx=rootSP.X;local bx2=cx-w2/2;local by2=headSP.Y
-            if espCfg.dummyBox then
-                obj.box.Visible=true;obj.box.Color=espCfg.dummyBoxColor
-                obj.box.Position=Vector2.new(bx2,by2);obj.box.Size=Vector2.new(w2,h2)
-            else obj.box.Visible=false end
-            if espCfg.dummyName then
-                obj.name.Visible=true;obj.name.Text=label;obj.name.Color=espCfg.dummyNameColor
-                obj.name.Position=Vector2.new(cx,by2-14)
-            else obj.name.Visible=false end
-            if espCfg.dummyHealth then
-                local hp=math.floor(hum.Health);local maxhp=math.floor(hum.MaxHealth)
-                obj.label.Visible=true;obj.label.Text=hp.."/"..maxhp.." HP";obj.label.Color=Color3.fromRGB(255,200,100)
-                obj.label.Position=Vector2.new(cx,by2+h2+2)
-                local hpPct=math.clamp(hum.Health/math.max(hum.MaxHealth,1),0,1)
-                local barX2=bx2-6;local barW2=4;local barH2=h2
-                obj.health.Visible=true;obj.health.Position=Vector2.new(barX2,by2);obj.health.Size=Vector2.new(barW2,barH2);obj.health.Color=Color3.fromRGB(30,30,30)
-                obj.healthFg.Visible=true;obj.healthFg.Position=Vector2.new(barX2,by2+barH2*(1-hpPct));obj.healthFg.Size=Vector2.new(barW2,barH2*hpPct);obj.healthFg.Color=espCfg.dummyBoxColor
-            else obj.health.Visible=false;obj.healthFg.Visible=false;obj.label.Visible=false end
-            if espCfg.dummyTracer then
-                obj.tracer.Visible=true;obj.tracer.Color=espCfg.dummyTracerColor;obj.tracer.Thickness=1
-                obj.tracer.From=Vector2.new(cam.ViewportSize.X/2,cam.ViewportSize.Y)
-                obj.tracer.To=Vector2.new(rootSP.X,rootSP.Y)
-            else obj.tracer.Visible=false end
-        end
-    end
-
-    -- ESP UI
-    ESPMain:Toggle({Name="Enable Player ESP",Flag="EspOn",    Default=false,Callback=function(v) espCfg.playerEnabled=v;notify("ESP",v and "Active!" or "Off") end})
-    ESPMain:Toggle({Name="Box",              Flag="EspBox",   Default=true, Callback=function(v) espCfg.box=v end})
-    ESPMain:Toggle({Name="Box Fill",         Flag="EspBoxFill",Default=false,Callback=function(v) espCfg.boxFill=v end})
-    ESPMain:Toggle({Name="Name",             Flag="EspName",  Default=true, Callback=function(v) espCfg.name=v end})
-    ESPMain:Toggle({Name="Health Bar",       Flag="EspHealth",Default=true, Callback=function(v) espCfg.health=v end})
-    ESPMain:Toggle({Name="Tracer",           Flag="EspTracer",Default=true, Callback=function(v) espCfg.tracer=v end})
-    ESPMain:Toggle({Name="Team Check",       Flag="EspTeam",  Default=true, Callback=function(v) espCfg.teamCheck=v end})
-    ESPMain:Toggle({Name="Vis Check",        Flag="EspVis",   Default=false,Callback=function(v) espCfg.visCheck=v end})
-    ESPMain:Label("Box Color"):Colorpicker({Name="Color",Flag="EspBoxColor",Default=Color3.fromRGB(255,255,255),Callback=function(v) espCfg.boxColor=v end})
-    ESPMain:Label("Tracer Color"):Colorpicker({Name="Color",Flag="EspTracerColor",Default=Color3.fromRGB(0,200,255),Callback=function(v) espCfg.tracerColor=v end})
-    ESPMain:Slider({Name="Max Distance",     Flag="EspDist",       Min=100,Max=5000,Default=1000,Suffix=" s",Callback=function(v) espCfg.maxDist=v end})
-    ESPMain:Slider({Name="Tracer Thickness", Flag="EspTracerThick",Min=1,Max=5,Default=1,Suffix=" px",    Callback=function(v) espCfg.tracerThick=v end})
-
-    ESPDummy:Toggle({Name="Enable Dummy ESP",Flag="DummyEspOn",    Default=false,Callback=function(v) espCfg.dummyEnabled=v;notify("Dummy ESP",v and "Active!" or "Off") end})
-    ESPDummy:Toggle({Name="Box",             Flag="DummyEspBox",   Default=true, Callback=function(v) espCfg.dummyBox=v end})
-    ESPDummy:Toggle({Name="Name",            Flag="DummyEspName",  Default=true, Callback=function(v) espCfg.dummyName=v end})
-    ESPDummy:Toggle({Name="Health",          Flag="DummyEspHealth",Default=true, Callback=function(v) espCfg.dummyHealth=v end})
-    ESPDummy:Toggle({Name="Tracer",          Flag="DummyEspTracer",Default=false,Callback=function(v) espCfg.dummyTracer=v end})
-    ESPDummy:Label("Box Color"):Colorpicker({Name="Color",Flag="DummyEspBoxColor",Default=Color3.fromRGB(255,165,0),Callback=function(v) espCfg.dummyBoxColor=v end})
-
-    -- ============================================================
-    --   CAMERA
-    -- ============================================================
-
-    local fovChangerConn=nil
-    CamMain:Toggle({Name="FOV Changer",Flag="FovChanger",Default=false,Callback=function(v)
-        if v then fovChangerConn=trackConn(RunService.RenderStepped:Connect(function()
-            pcall(function() if CameraController then CameraController._base_fov=getFlag("FovVal",80) end end)
-        end))
-        else if fovChangerConn then fovChangerConn:Disconnect();fovChangerConn=nil end
-            pcall(function() if CameraController then CameraController._base_fov=80;ws.CurrentCamera.FieldOfView=80 end end) end
-    end})
-    CamMain:Slider({Name="FOV",Flag="FovVal",Min=30,Max=120,Default=80,Callback=function(v)
-        if getFlag("FovChanger",false) then pcall(function() if CameraController then CameraController._base_fov=v end end) end
-    end})
-    local noShakeConn=nil
-    CamMain:Toggle({Name="No Camera Shake",Flag="NoShake",Default=false,Callback=function(v)
-        if v then noShakeConn=trackConn(RunService.RenderStepped:Connect(function()
-            pcall(function() if CameraController then CameraController._shake_enabled=false;CameraController.ShakeCFrame=CFrame.identity end end)
-        end))
-        else if noShakeConn then noShakeConn:Disconnect();noShakeConn=nil end
-            pcall(function() if CameraController then CameraController._shake_enabled=true end end) end
-    end})
-    local noSwayConn=nil
-    CamMain:Toggle({Name="No Weapon Sway",Flag="NoSway",Default=false,Callback=function(v)
-        if v then noSwayConn=trackConn(RunService.RenderStepped:Connect(function()
-            pcall(function() if CameraController then CameraController._sway_spring.Value=Vector2.zero;CameraController._sway_spring.Target=Vector2.zero end end)
-        end))
-        else if noSwayConn then noSwayConn:Disconnect();noSwayConn=nil end end
-    end})
-    local noBobConn=nil
-    CamMain:Toggle({Name="No Bobbing",Flag="NoBob",Default=false,Callback=function(v)
-        if v then noBobConn=trackConn(RunService.RenderStepped:Connect(function()
-            pcall(function()
-                if CameraController then
-                    CameraController._bobbing_speed_spring.Target=0;CameraController._bobbing_speed_spring.Value=0
-                    CameraController._bobbing_value_spring.Target=0;CameraController._bobbing_value_spring.Value=0
-                end
-            end)
-        end))
-        else if noBobConn then noBobConn:Disconnect();noBobConn=nil end end
-    end})
-    local vmConn=nil;local vmCfg={x=0,y=0,z=0}
-    CamAdv:Toggle({Name="Custom Viewmodel",Flag="VMOn",Default=false,Callback=function(v)
-        if v then vmConn=trackConn(RunService.RenderStepped:Connect(function()
-            pcall(function() if CameraController then CameraController.ViewModelOffsetCFrame=CFrame.new(vmCfg.x,vmCfg.y,vmCfg.z) end end)
-        end))
-        else if vmConn then vmConn:Disconnect();vmConn=nil end
-            pcall(function() if CameraController then CameraController.ViewModelOffsetCFrame=CFrame.identity end end) end
-    end})
-    CamAdv:Slider({Name="X",Flag="VMX",Min=-50,Max=50,Default=0,Suffix="x0.1",Callback=function(v) vmCfg.x=v*0.1 end})
-    CamAdv:Slider({Name="Y",Flag="VMY",Min=-50,Max=50,Default=0,Suffix="x0.1",Callback=function(v) vmCfg.y=v*0.1 end})
-    CamAdv:Slider({Name="Z",Flag="VMZ",Min=-50,Max=50,Default=0,Suffix="x0.1",Callback=function(v) vmCfg.z=v*0.1 end})
-
-    -- ============================================================
-    --   MISC
-    -- ============================================================
-
-    local lCfg={primary=PRIMARY_WEAPONS[1],secondary=SECONDARY_WEAPONS[1],melee=MELEE_WEAPONS[1],utility=UTILITY_WEAPONS[1]}
-    MLoad:Dropdown({Name="Primary",  Flag="LPrimary",  Default={PRIMARY_WEAPONS[1]},  Items=PRIMARY_WEAPONS,  Multi=false,Callback=function(v) lCfg.primary=type(v)=="table" and v[1] or v end})
-    MLoad:Dropdown({Name="Secondary",Flag="LSecondary",Default={SECONDARY_WEAPONS[1]},Items=SECONDARY_WEAPONS,Multi=false,Callback=function(v) lCfg.secondary=type(v)=="table" and v[1] or v end})
-    MLoad:Dropdown({Name="Melee",    Flag="LMelee",    Default={MELEE_WEAPONS[1]},    Items=MELEE_WEAPONS,    Multi=false,Callback=function(v) lCfg.melee=type(v)=="table" and v[1] or v end})
-    MLoad:Dropdown({Name="Utility",  Flag="LUtility",  Default={UTILITY_WEAPONS[1]},  Items=UTILITY_WEAPONS,  Multi=false,Callback=function(v) lCfg.utility=type(v)=="table" and v[1] or v end})
-    MLoad:Button({Name="Apply Loadout",Callback=function()
-        pcall(function() PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility});notify("Loadout","Applied!") end)
-    end})
-    MLoad:Toggle({Name="Auto Apply On Spawn",Flag="AutoLoadout",Default=false,Callback=function(_) end})
-    lp.CharacterAdded:Connect(function()
-        if getFlag("AutoLoadout",false) then
-            task.wait(1)
-            pcall(function() PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility}) end)
         end
     end)
-
-    MQueue:Dropdown({Name="Queue Mode",Flag="QMode",Default={"1v1"},Items=QUEUE_MODES,Multi=false,Callback=function(_) end})
-    MQueue:Button({Name="Join Queue",Callback=function()
-        pcall(function() local m=getFlag("QMode","1v1");QueueRemote:InvokeServer(m);notify("Queue","Joined "..m.."!") end)
-    end})
-    MQueue:Dropdown({Name="Vote Map",Flag="VMap",Default={MAPS[1]},Items=MAPS,Multi=false,Callback=function(_) end})
-    MQueue:Button({Name="Vote Map",Callback=function()
-        pcall(function() local m=getFlag("VMap",MAPS[1]);VoteRemote:FireServer(m);notify("Vote","Voted "..m.."!") end)
-    end})
-    local autoVoteOn=false
-    MQueue:Toggle({Name="Auto Vote",Flag="AutoVote",Default=false,Callback=function(v)
-        autoVoteOn=false;task.wait(0.05)
-        if v then autoVoteOn=true;task.spawn(function()
-            while autoVoteOn do
-                pcall(function() VoteRemote:FireServer(getFlag("VMap",MAPS[1])) end)
-                task.wait(2)
-            end
-        end) end
-    end})
-
-    -- ============================================================
-    --   SKYBOX
-    -- ============================================================
-
-    local origSky=nil;local skyOn=false
-    local function getSky() return ws.Terrain:FindFirstChildOfClass("Sky") end
-    local function getAtmo() return ws.Terrain:FindFirstChildOfClass("Atmosphere") end
-    local function saveSky()
-        if origSky then return end;local sky=getSky();if not sky then return end
-        origSky={SkyboxBk=sky.SkyboxBk,SkyboxDn=sky.SkyboxDn,SkyboxFt=sky.SkyboxFt,SkyboxLf=sky.SkyboxLf,SkyboxRt=sky.SkyboxRt,SkyboxUp=sky.SkyboxUp}
-    end
-    local function applySky(name)
-        local data=SKYBOXES[name];if not data then return end;saveSky()
-        local sky=getSky();if not sky then sky=Instance.new("Sky");sky.Parent=ws.Terrain end
-        sky.SkyboxBk=data.SkyboxBk;sky.SkyboxDn=data.SkyboxDn;sky.SkyboxFt=data.SkyboxFt
-        sky.SkyboxLf=data.SkyboxLf;sky.SkyboxRt=data.SkyboxRt;sky.SkyboxUp=data.SkyboxUp
-        local atmo=getAtmo()
-        if data.isNight then Lighting.ClockTime=0;Lighting.Ambient=Color3.fromRGB(30,30,60);if atmo then atmo.Density=0.8 end end
-    end
-    local function restoreSky()
-        if not origSky then return end;local sky=getSky();if not sky then return end
-        sky.SkyboxBk=origSky.SkyboxBk;sky.SkyboxDn=origSky.SkyboxDn;sky.SkyboxFt=origSky.SkyboxFt
-        sky.SkyboxLf=origSky.SkyboxLf;sky.SkyboxRt=origSky.SkyboxRt;sky.SkyboxUp=origSky.SkyboxUp;origSky=nil
-    end
-    SkyMain:Toggle({Name="Enable Skybox",Flag="SkyOn",Default=false,Callback=function(v)
-        skyOn=v;if v then applySky(getFlag("SkySel","Default"));notify("Skybox","Applied!") else restoreSky();notify("Skybox","Restored!") end
-    end})
-    SkyMain:Dropdown({Name="Skybox",Flag="SkySel",Default={"Default"},Items=SKYBOX_LIST,Multi=false,
-        Callback=function(v) if skyOn then applySky(type(v)=="table" and v[1] or v) end end})
-    SkyMain:Button({Name="Apply Now",Callback=function()
-        if not skyOn then notify("Skybox","Enable first!",2);return end
-        applySky(getFlag("SkySel","Default"));notify("Skybox","Applied!")
-    end})
-    SkyMain:Button({Name="Restore",Callback=function() restoreSky();notify("Skybox","Restored!") end})
-
-    -- ============================================================
-    --   DEVICE SPOOFER
-    -- ============================================================
-
-    local deviceSpoofs={Computer="MouseKeyboard",Mobile="Touch",Console="Gamepad",VR="VR"}
-    local function spoofDevice(deviceType)
-        local td=deviceSpoofs[deviceType];if not td then notify("Device Spoofer","Unknown!",3);return end
-        if not SetControlsRemote then SetControlsRemote=RBF:FindFirstChild("SetControls") end
-        if not SetControlsRemote then notify("Device Spoofer","Remote not found!",3);return end
-        local ok,err=pcall(function() SetControlsRemote:FireServer(td) end)
-        if ok then notify("Device Spoofer","Spoofed to: "..deviceType,3)
-        else notify("Device Spoofer","Failed: "..tostring(err),3) end
-    end
-    DevMain:Dropdown({Name="Device Type",Flag="DeviceType",Default={"Computer"},Items=DEVICE_TYPES,Multi=false,Callback=function(_) end})
-    DevMain:Button({Name="Spoof Device",Callback=function() spoofDevice(getFlag("DeviceType","Computer")) end})
-    DevMain:Button({Name="Computer",Callback=function() spoofDevice("Computer") end})
-    DevMain:Button({Name="Mobile",  Callback=function() spoofDevice("Mobile")   end})
-    DevMain:Button({Name="Console", Callback=function() spoofDevice("Console")  end})
-    DevMain:Button({Name="VR",      Callback=function() spoofDevice("VR")       end})
-
-    -- ============================================================
-    --   FAST COOLDOWNS + WAR HORN
-    -- ============================================================
-
-    local function zeroCooldowns(item)
-        for _,field in ipairs(COOLDOWN_FIELDS) do
-            if item[field]~=nil then rawset(item,field,0) end
-        end
-    end
-
-    local function setFastCooldowns()
-        pcall(function()
-            for _,v in pairs(getgc(true)) do
-                if type(v)=="table" then
-                    for _,field in ipairs(COOLDOWN_FIELDS) do
-                        if rawget(v,field) then rawset(v,field,0.001) end
+    pcall(function()
+        local IL = safeRequire(ReplicatedStorage.Modules.ItemLibrary)
+        if IL and IL.Items then
+            for _, item in pairs(IL.Items) do
+                if type(item) == "table" then
+                    for _, field in ipairs({"Cooldown", "AttackCooldown", "UseDelay", "FireCooldown"}) do
+                        if rawget(item, field) then rawset(item, field, 0.001) end
                     end
                 end
             end
-        end)
-        pcall(function()
-            local Modules=ReplicatedStorage:FindFirstChild("Modules");if not Modules then return end
-            local ils=Modules:FindFirstChild("ItemLibrary");if not ils then return end
-            local ok,IL=pcall(require,ils);if not ok or type(IL)~="table" then return end
-            local items=IL.Items or IL.Weapons or IL.Utilities;if type(items)~="table" then return end
-            for _,item in pairs(items) do if type(item)=="table" then zeroCooldowns(item) end end
-        end)
-        print("[FastCooldowns] ✅")
-    end
-
-    local function patchWarHorn()
-        local ok2,result=pcall(function()
-            local Modules=ReplicatedStorage:FindFirstChild("Modules");if not Modules then return false end
-            local ils=Modules:FindFirstChild("ItemLibrary");if not ils then return false end
-            local ok,IL=pcall(require,ils);if not ok or type(IL)~="table" then return false end
-            local items=IL.Items or IL.Weapons or IL.Utilities;if type(items)~="table" then return false end
-            local patched=false
-            for name,item in pairs(items) do
-                if type(item)=="table" then
-                    local itemName=item.Name or name
-                    if WAR_HORN_KEYS[name] or WAR_HORN_KEYS[itemName] then
-                        zeroCooldowns(item);patched=true
-                    end
-                end
-            end
-            return patched
-        end)
-        return ok2 and result or false
-    end
-
-    local cooldownLoopTask=nil
-    local cooldownCfg={enabled=false,warHornOnly=false,loopInterval=2}
-
-    local function startCooldownLoop()
-        cooldownLoopTask=task.spawn(function()
-            while cooldownCfg.enabled do
-                if cooldownCfg.warHornOnly then patchWarHorn() else setFastCooldowns() end
-                task.wait(cooldownCfg.loopInterval)
-            end
-        end)
-    end
-
-    CoolSec:Toggle({Name="Enable Fast Cooldowns",Flag="FastCool",Default=false,Callback=function(v)
-        cooldownCfg.enabled=v
-        if v then setFastCooldowns();startCooldownLoop();notify("Fast Cooldowns","Active!")
-        else cooldownCfg.enabled=false
-            if cooldownLoopTask then task.cancel(cooldownLoopTask);cooldownLoopTask=nil end
-            notify("Fast Cooldowns","Off")
-        end
-    end})
-    CoolSec:Toggle({Name="War Horn Only",Flag="WarHornOnly",Default=false,Callback=function(v) cooldownCfg.warHornOnly=v end})
-    CoolSec:Slider({Name="Loop Interval",Flag="CoolInterval",Min=1,Max=30,Default=2,Suffix="s",Callback=function(v) cooldownCfg.loopInterval=v end})
-    CoolSec:Button({Name="Apply Once",Callback=function()
-        if cooldownCfg.warHornOnly then local ok=patchWarHorn();notify("War Horn",ok and "Patched!" or "Not found",3)
-        else setFastCooldowns();notify("Fast Cooldowns","Applied!",3) end
-    end})
-    CoolSec:Button({Name="Patch War Horn",Callback=function()
-        local ok=patchWarHorn();notify("War Horn",ok and "Patched!" or "Not found",3)
-    end})
-    task.delay(2,function() patchWarHorn() end)
-
-    -- ============================================================
-    --   SETTINGS
-    -- ============================================================
-
-    Window:Category("Settings")
-    Library:CreateSettingsPage(Window,KeybindList)
-
-    -- ============================================================
-    --   WATERMARK
-    -- ============================================================
-
-    local _fps=0;local _ping=0;local _frameCount=0;local _frameTimer=tick();local _wmActive=true
-    trackConn(RunService.Heartbeat:Connect(function()
-        _frameCount+=1
-        if tick()-_frameTimer>=1 then _fps=_frameCount;_frameTimer=tick();_frameCount=0 end
-    end))
-    task.spawn(function()
-        while _wmActive do
-            task.wait(0.5);if not _wmActive then break end
-            local ok,pingVal=pcall(function()
-                return math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            end)
-            if ok and pingVal then _ping=pingVal end
-            pcall(function()
-                Library:Watermark({"Rivals Hub","v2.4.1",120959262762131,"FPS: ".._fps.." | Ping: ".._ping.."ms"})
-            end)
         end
     end)
+    print("[FastCooldowns] Applied.")
+end
 
-    -- ============================================================
-    --   HEARTBEAT — Aimbot + Target cache
-    -- ============================================================
+-- =============================================
+--   DEVICE SPOOFER (Mobile-safe)
+-- =============================================
 
-    local _heartbeatTimer=0
-    trackConn(RunService.Heartbeat:Connect(function(dt)
-        cam=ws.CurrentCamera
-        _heartbeatTimer+=dt
-        if _heartbeatTimer>=TARGET_CACHE_TTL then
-            _heartbeatTimer=0
-            if AB.on then _targetCache=abFind();_targetCacheTime=tick() end
+local function spoofDevice(deviceType)
+    local map = { Computer = "MouseKeyboard", Mobile = "Touch", Console = "Gamepad", VR = "VR" }
+    local code = map[deviceType]
+    if not code then return end
+    local remote = ReplicatedStorage.Remotes.Replication.Fighter:FindFirstChild("SetControls")
+    if remote then pcall(function() remote:FireServer(code) end) end
+end
+
+-- =============================================
+--   MAIN INIT
+-- =============================================
+
+-- Remove notice
+task.delay(3, function()
+    if notice and notice.Parent then notice:Destroy() end
+end)
+
+-- Set watermark
+local watermarkText = Drawing.new("Text")
+watermarkText.Text = "Rivals v2.4 | Mobile"
+watermarkText.Size = 14
+watermarkText.Font = 3
+watermarkText.Color = Color3.fromRGB(100, 80, 255)
+watermarkText.Outline = true
+watermarkText.Visible = true
+watermarkText.Position = Vector2.new(10, 10)
+
+RunService.RenderStepped:Connect(function()
+    watermarkText.Position = Vector2.new(10, 10)
+end)
+
+-- =============================================
+--   RENDER LOOP
+-- =============================================
+
+RunService.RenderStepped:Connect(function()
+    updateEsp()
+    updateDummyEsp()
+end)
+
+-- =============================================
+--   LOADOUT (Safe)
+-- =============================================
+
+local lCfg = {
+    primary = "Assault Rifle",
+    secondary = "Handgun",
+    melee = "Fists",
+    utility = "Grenade"
+}
+
+local function applyLoadout()
+    local remote = ReplicatedStorage.Remotes.Replication.Fighter:FindFirstChild("PickWeapons")
+    if remote then
+        pcall(function() remote:FireServer({lCfg.primary, lCfg.secondary, lCfg.melee, lCfg.utility}) end)
+    end
+end
+
+lp.CharacterAdded:Connect(function()
+    task.wait(2)
+    applyLoadout()
+end)
+
+-- =============================================
+--   DEBUG CONTROLS (Mobile-friendly)
+-- =============================================
+
+-- Double-tap on screen to lock nearest target
+local lastTap = 0
+UserInputService.TouchTap:Connect(function(pos, count)
+    if count >= 2 then
+        if tick() - lastTap < 1 then
+            lockNearest()
         end
-        if AB.on and CameraController then
-            if abDoReact then abReactT-=dt;if abReactT<=0 then abDoReact=false end end
-            if not abDoReact then
-                if abTgt and not abTgtValid(abTgt) then
-                    abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                end
-                if not abTgt then
-                    abTgt=_targetCache
-                    if abTgt then
-                        abLockT=0;abDoReact=true;abReactT=AB.reactTime/1000
-                        abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                    end
-                end
-                if abTgt then
-                    abLockT+=dt
-                    if abLockT>AB.maxLock then
-                        abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                    elseif inFov(abTgt,abEffFov()) then
-                        pcall(function()
-                            local aimPos=getPredictedPos(abTgt)
-                            local du=(aimPos-cam.CFrame.Position).Unit
-                            local tRot=Vector2.new(
-                                math.asin(math.clamp(du.Y,-1,1)),
-                                math.atan2(-du.X,-du.Z)
-                            )
-                            local cur=CameraController.Rotation
-                            local sp,_=cam:WorldToViewportPoint(aimPos)
-                            local sd=(Vector2.new(sp.X,sp.Y)-scr()).Magnitude
-                            local newRot=applySmartLock(tRot,cur,dt,sd,abEffFov())
-                            CameraController:ApplyRotationDelta(Vector2.new(
-                                newRot.X-cur.X,
-                                angDiff(cur.Y,newRot.Y)
-                            ))
-                        end)
-                    else
-                        abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                    end
-                end
-            end
-        end
-    end))
+        lastTap = tick()
+    end
+end)
 
-    -- ============================================================
-    --   RENDERSTEPPED — Drawing ONLY
-    -- ============================================================
+-- =============================================
+--   NOTIFICATION (Safe)
+-- =============================================
 
-    trackConn(RunService.RenderStepped:Connect(function()
-        cam=ws.CurrentCamera
+local function notify(msg)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Rivals Hub",
+            Text = msg,
+            Duration = 2
+        })
+    end)
+end
 
-        -- FOV
-        if not fovCfg.visible then
-            fovCircle.Visible=false;fovHalf.Visible=false;abCirc.Visible=false
-        else
-            local center=fovCfg.useCenter and scr() or getMouse()
-            fovCircle.Visible=true;fovCircle.Color=fovCfg.color;fovCircle.Position=center
-            local myRoot=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            local orig=myRoot and myRoot.Position or cam.CFrame.Position
-            fovCircle.Radius=(abTgt and isVis(orig,abTgt)) and fovCfg.onTarget
-                or (abTgt and fovCfg.onBarrier) or fovCfg.fovSize
-            if fovCfg.half then
-                fovHalf.Visible=true;fovHalf.Color=fovCfg.color
-                fovHalf.Position=center;fovHalf.Radius=fovCircle.Radius*0.5
-            else fovHalf.Visible=false end
-            abCirc.Position=center;abCirc.Radius=abEffFov();abCirc.Visible=AB.on
-        end
+notify("Rivals v2.4 (Mobile) — Loaded!")
 
-        -- Silent FOV
-        if not silentCfg.enabled or not silentCfg.circleVisible then
-            silentCircle.Visible=false
-        else
-            local center=silentCfg.useCenter and scr() or getMouse()
-            silentCircle.Visible=true;silentCircle.Radius=silentCfg.fovSize
-            silentCircle.Thickness=silentCfg.circleThick;silentCircle.Position=center
-            silentCircle.Color=fetchNearest(silentCfg.part)~=nil
-                and silentCfg.targetColor or silentCfg.circleColor
-        end
-
-        -- Player ESP
-        if espCfg.playerEnabled then
-            cleanEsp()
-            for _,p in ipairs(Players:GetPlayers()) do
-                if p~=lp then pcall(updatePlayerEsp,p) end
-            end
-        else
-            for _,obj in pairs(espObjects) do
-                for _,d in pairs(obj) do if typeof(d)=="table" and d.Visible~=nil then d.Visible=false end end
-            end
-        end
-
-        -- Dummy ESP
-        pcall(updateDummyEsp)
-    end))
-
-    -- ============================================================
-    --   INIT
-    -- ============================================================
-
-    Window:Init()
-    notify("Rivals Hub","v2.4.1 — All bugs fixed ✅",5)
-    print("[v2.4.1] Rivals Hub loaded — ReplicateUnreliable fix + nil guards + safeInitRivals")
-
-end -- end initRivals
+print("[Rivals] Script ready.")
