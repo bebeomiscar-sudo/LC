@@ -1,117 +1,25 @@
 -- // INSTANCE HUB
 -- // Built from scratch using all noted sources
--- // Anti-cheat bypass → Ragebot → ESP → Tracers → Aimbot
 
 -- ══════════════════════════════════════════════
--- ANTI CHEAT BYPASS (runs first)
+-- SERVICES
 -- ══════════════════════════════════════════════
 
 local cloneref = cloneref or function(obj) return obj end
 local newcclosure = newcclosure or function(f) return f end
 
-local Players          = cloneref(game:GetService("Players"))
+local Players           = cloneref(game:GetService("Players"))
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
-local LogService       = cloneref(game:GetService("LogService"))
-local ScriptContext    = cloneref(game:GetService("ScriptContext"))
-local RunService       = cloneref(game:GetService("RunService"))
-local UserInputService = cloneref(game:GetService("UserInputService"))
-local Workspace        = cloneref(game:GetService("Workspace"))
-local HttpService      = cloneref(game:GetService("HttpService"))
-local GuiService       = cloneref(game:GetService("GuiService"))
+local RunService        = cloneref(game:GetService("RunService"))
+local UserInputService  = cloneref(game:GetService("UserInputService"))
+local Workspace         = cloneref(game:GetService("Workspace"))
+local HttpService       = cloneref(game:GetService("HttpService"))
+local GuiService        = cloneref(game:GetService("GuiService"))
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do task.wait() end
 
-task.wait(1.0)
-
--- 1. Hang AnalyticsPipelineController
-task.spawn(function()
-    if not getgc then return end
-    local hooked = 0
-    for _, v in pairs(getgc(true)) do
-        if typeof(v) == "function" then
-            local ok, src = pcall(function()
-                return debug.info(v, "s")
-            end)
-            if ok and type(src) == "string"
-                and src:find("AnalyticsPipelineController") then
-                hookfunction(v, newcclosure(function(...)
-                    return wait(9e9)
-                end))
-                hooked += 1
-            end
-        end
-    end
-    print("[bypass] hung " .. hooked .. " analytics functions")
-end)
-
--- 2. Hook Analytics remote
-task.spawn(function()
-    local rem = ReplicatedStorage:FindFirstChild("Remotes")
-    if not rem then return end
-    rem = rem:FindFirstChild("AnalyticsPipeline")
-    if not rem then return end
-    rem = rem:FindFirstChild("RemoteEvent")
-    if rem and rem.OnClientEvent then
-        for _, conn in pairs(getconnections(rem.OnClientEvent)) do
-            if conn and conn.Function then
-                pcall(hookfunction, conn.Function,
-                    newcclosure(function(...) end))
-            end
-        end
-    end
-end)
-
--- 3. Suppress LogService.MessageOut
-task.spawn(function()
-    for _, conn in pairs(getconnections(LogService.MessageOut)) do
-        if conn and conn.Function then
-            pcall(hookfunction, conn.Function,
-                newcclosure(function(...) end))
-        end
-    end
-end)
-
--- 4. Disable ScriptContext.Error
-task.spawn(function()
-    for _, conn in pairs(getconnections(ScriptContext.Error)) do
-        pcall(function() conn:Disable() end)
-    end
-    pcall(hookfunction, ScriptContext.Error.Connect,
-        newcclosure(function(...) return nil end))
-end)
-
--- 5. Block Kick
-task.spawn(function()
-    for _, name in ipairs({ "Kick", "kick" }) do
-        local fn = LocalPlayer[name]
-        if type(fn) == "function" then
-            hookfunction(fn, newcclosure(function(self, ...)
-                if self == LocalPlayer then return end
-                return fn(self, ...)
-            end))
-        end
-    end
-end)
-
--- 6. Spoof weak-table __mode
-task.spawn(function()
-    local renv = getrenv()
-    if renv and renv.setmetatable and hookfunction then
-        local orig = renv.setmetatable
-        hookfunction(orig, newcclosure(function(tbl, mt)
-            if mt and type(mt) == "table" and rawget(mt, "__mode") then
-                local stack = debug.traceback()
-                if stack:find("MiscellaneousController")
-                    or stack:find("CameraSecurity")
-                    or stack:find("AnalyticsPipelineController") then
-                    return orig({1, 2, 3}, {})
-                end
-            end
-            return orig(tbl, mt)
-        end))
-    end
-end)
+local Camera = Workspace.CurrentCamera
 
 -- ══════════════════════════════════════════════
 -- LIBRARY LOAD
@@ -143,7 +51,6 @@ local Tabs = {
     Combat  = Window:Page({ Name = "Combat",  Columns = 2 }),
     Visuals = Window:Page({ Name = "Visuals", Columns = 2 }),
     World   = Window:Page({ Name = "World",   Columns = 2 }),
-    Player  = Window:Page({ Name = "Player",  Columns = 2 }),
     Misc    = Window:Page({ Name = "Misc",    Columns = 2 }),
 }
 
@@ -152,29 +59,20 @@ local Tabs = {
 -- ══════════════════════════════════════════════
 
 -- Combat
-local AimbotSection  = Tabs.Combat:Section({ Name = "Aimbot",       Side = 1 })
-local AimbotFovSec   = Tabs.Combat:Section({ Name = "FOV Config",   Side = 1 })
-local RagebotSection = Tabs.Combat:Section({ Name = "Ragebot",      Side = 2 })
-local RageVisSec     = Tabs.Combat:Section({ Name = "Rage Visual",  Side = 2 })
+local AimbotSection  = Tabs.Combat:Section({ Name = "Aimbot",      Side = 1 })
+local AimbotFovSec   = Tabs.Combat:Section({ Name = "FOV Config",  Side = 1 })
+local RagebotSection = Tabs.Combat:Section({ Name = "Ragebot",     Side = 2 })
+local RageVisSec     = Tabs.Combat:Section({ Name = "Rage Visual", Side = 2 })
 
 -- Visuals
-local ESPSection     = Tabs.Visuals:Section({ Name = "ESP",         Side = 1 })
-local ESPExtra       = Tabs.Visuals:Section({ Name = "ESP Extra",   Side = 2 })
+local ESPSection = Tabs.Visuals:Section({ Name = "ESP",       Side = 1 })
+local ESPExtra   = Tabs.Visuals:Section({ Name = "ESP Extra", Side = 2 })
 
 -- World
-local TracerSection  = Tabs.World:Section({ Name = "Bullet Tracers", Side = 1 })
-
--- Player
-local PlayerSection  = Tabs.Player:Section({ Name = "Player",        Side = 1 })
+local TracerSection = Tabs.World:Section({ Name = "Bullet Tracers", Side = 1 })
 
 -- Misc
-local MiscSection    = Tabs.Misc:Section({ Name = "Misc",            Side = 1 })
-
--- ══════════════════════════════════════════════
--- SHARED STATE
--- ══════════════════════════════════════════════
-
-local Camera = Workspace.CurrentCamera
+local MiscSection = Tabs.Misc:Section({ Name = "Misc", Side = 1 })
 
 -- ══════════════════════════════════════════════
 -- ██████████████████████████████████████████████
@@ -196,30 +94,31 @@ local aimbot = {
     smoothCF      = nil,
 }
 
--- FOV Circle UI
+-- ── FOV Circle UI ──────────────────────────────
+
 local aimbotGui = Instance.new("ScreenGui")
-aimbotGui.Name            = "AimbotFOV"
-aimbotGui.ResetOnSpawn    = false
-aimbotGui.IgnoreGuiInset  = true
-aimbotGui.DisplayOrder    = 9999
-aimbotGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-aimbotGui.Parent          = game.CoreGui
+aimbotGui.Name           = "AimbotFOV"
+aimbotGui.ResetOnSpawn   = false
+aimbotGui.IgnoreGuiInset = true
+aimbotGui.DisplayOrder   = 9999
+aimbotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+aimbotGui.Parent         = game.CoreGui
 
 local aimbotFOVContainer = Instance.new("Frame")
-aimbotFOVContainer.Name                 = "FOVContainer"
+aimbotFOVContainer.Name                   = "FOVContainer"
 aimbotFOVContainer.BackgroundTransparency = 1
-aimbotFOVContainer.Size                 = UDim2.new(1, 0, 1, 0)
-aimbotFOVContainer.Visible              = false
-aimbotFOVContainer.Parent               = aimbotGui
+aimbotFOVContainer.Size                   = UDim2.new(1, 0, 1, 0)
+aimbotFOVContainer.Visible                = false
+aimbotFOVContainer.Parent                 = aimbotGui
 
 local aimbotFOVCircle = Instance.new("Frame")
-aimbotFOVCircle.Name                    = "FOVCircle"
-aimbotFOVCircle.BackgroundTransparency  = 1
-aimbotFOVCircle.AnchorPoint             = Vector2.new(0.5, 0.5)
-aimbotFOVCircle.Parent                  = aimbotFOVContainer
+aimbotFOVCircle.Name                   = "FOVCircle"
+aimbotFOVCircle.BackgroundTransparency = 1
+aimbotFOVCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
+aimbotFOVCircle.Parent                 = aimbotFOVContainer
 
 local aimbotFOVStroke = Instance.new("UIStroke")
-aimbotFOVStroke.Thickness   = 1.5
+aimbotFOVStroke.Thickness    = 1.5
 aimbotFOVStroke.Color        = Color3.fromRGB(255, 255, 255)
 aimbotFOVStroke.Transparency = 0
 aimbotFOVStroke.Parent       = aimbotFOVCircle
@@ -259,20 +158,20 @@ aimbotFOVFillGrad.Color    = ColorSequence.new({
 aimbotFOVFillGrad.Parent = aimbotFOVFill
 
 local aimbotFOVCfg = {
-    OutlineColor1      = Color3.fromRGB(255, 255, 255),
-    OutlineColor2      = Color3.fromRGB(255, 255, 255),
-    OutlineThickness   = 1.5,
+    OutlineColor1       = Color3.fromRGB(255, 255, 255),
+    OutlineColor2       = Color3.fromRGB(255, 255, 255),
+    OutlineThickness    = 1.5,
     OutlineTransparency = 0,
-    OutlineRotation    = 0,
-    FilledEnabled      = false,
-    FilledColor1       = Color3.fromRGB(255, 255, 255),
-    FilledColor2       = Color3.fromRGB(0, 0, 0),
-    FilledTransparency = 0.7,
-    FilledRotation     = 0,
-    FilledAnimated     = false,
-    FilledSpeed        = 1,
-    SpinOn             = false,
-    SpinSpd            = 1,
+    OutlineRotation     = 0,
+    FilledEnabled       = false,
+    FilledColor1        = Color3.fromRGB(255, 255, 255),
+    FilledColor2        = Color3.fromRGB(0, 0, 0),
+    FilledTransparency  = 0.7,
+    FilledRotation      = 0,
+    FilledAnimated      = false,
+    FilledSpeed         = 1,
+    SpinOn              = false,
+    SpinSpd             = 1,
 }
 
 local function updaimbotoutlinegrad()
@@ -289,7 +188,7 @@ local function updaimbotfillgrad()
     })
 end
 
--- FOV circle update loop
+-- FOV Animation Loop
 local fovAnimClock = 0
 RunService.RenderStepped:Connect(function(dt)
     fovAnimClock += dt
@@ -306,18 +205,19 @@ RunService.RenderStepped:Connect(function(dt)
     aimbotFOVFill.Position   = UDim2.fromOffset(cx, cy)
     aimbotFOVFill.Size       = UDim2.fromOffset(d, d)
 
-    -- Spin
     if aimbotFOVCfg.SpinOn then
-        aimbotFOVStrokeGrad.Rotation = (fovAnimClock * aimbotFOVCfg.SpinSpd * 45) % 360
+        aimbotFOVStrokeGrad.Rotation =
+            (fovAnimClock * aimbotFOVCfg.SpinSpd * 45) % 360
     end
 
-    -- Animated fill
     if aimbotFOVCfg.FilledAnimated then
         aimbotFOVFillGrad.Rotation =
             (math.sin(fovAnimClock * aimbotFOVCfg.FilledSpeed) * 90)
             + aimbotFOVCfg.FilledRotation
     end
 end)
+
+-- ── Aimbot Core ────────────────────────────────
 
 local function clearAimbotLock()
     aimbot.lockedTarget = nil
@@ -483,8 +383,9 @@ end
 
 -- ── Aimbot UI ──────────────────────────────────
 
-AimbotSection:Dropdown("AimbotMode", {
+AimbotSection:Dropdown({
     Name     = "activation mode",
+    Flag     = "AimbotMode",
     Default  = "Toggle",
     Items    = { "Always", "Toggle", "Hold" },
     Callback = function(val)
@@ -529,7 +430,7 @@ AimbotSection:Toggle({
     end,
 })
 
--- Hold mode polling
+-- Hold / Always polling
 RunService.RenderStepped:Connect(function()
     if aimbot.keyMode == "always" then
         local shouldBeOn = aimbot.masterEnabled
@@ -541,7 +442,7 @@ RunService.RenderStepped:Connect(function()
         return
     end
     if aimbot.keyMode == "hold" and aimbot.masterEnabled then
-        local opts = getgenv().Options or {}
+        local opts   = getgenv().Options or {}
         local picker = opts.AimbotKey
         if not picker then return end
         local held = picker:GetState()
@@ -581,7 +482,8 @@ AimbotSection:Dropdown({
     Callback = function(val) aimbot.targetPart = val end,
 })
 
--- FOV Config UI
+-- ── FOV Config UI ──────────────────────────────
+
 AimbotFovSec:Toggle({
     Name     = "show fov",
     Flag     = "ShowAimbotFOV",
@@ -593,11 +495,17 @@ AimbotFovSec:Toggle({
 }):Colorpicker({
     Flag     = "AimbotFOVOutlineColor1",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c) aimbotFOVCfg.OutlineColor1 = c updaimbotoutlinegrad() end,
+    Callback = function(c)
+        aimbotFOVCfg.OutlineColor1 = c
+        updaimbotoutlinegrad()
+    end,
 }):Colorpicker({
     Flag     = "AimbotFOVOutlineColor2",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c) aimbotFOVCfg.OutlineColor2 = c updaimbotoutlinegrad() end,
+    Callback = function(c)
+        aimbotFOVCfg.OutlineColor2 = c
+        updaimbotoutlinegrad()
+    end,
 })
 
 AimbotFovSec:Toggle({
@@ -611,11 +519,17 @@ AimbotFovSec:Toggle({
 }):Colorpicker({
     Flag     = "AimbotFOVFillColor1",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c) aimbotFOVCfg.FilledColor1 = c updaimbotfillgrad() end,
+    Callback = function(c)
+        aimbotFOVCfg.FilledColor1 = c
+        updaimbotfillgrad()
+    end,
 }):Colorpicker({
     Flag     = "AimbotFOVFillColor2",
     Default  = Color3.fromRGB(0, 0, 0),
-    Callback = function(c) aimbotFOVCfg.FilledColor2 = c updaimbotfillgrad() end,
+    Callback = function(c)
+        aimbotFOVCfg.FilledColor2 = c
+        updaimbotfillgrad()
+    end,
 })
 
 AimbotFovSec:Toggle({
@@ -765,56 +679,55 @@ do
     local workspace_r       = cloneref(game:GetService("Workspace"))
 
     local player = players.LocalPlayer
-    local camera = workspace_r.CurrentCamera
 
     local modules = {
-        enums     = instanceSafeRequire(replicatedstorage.Modules.EnumLibrary),
-        fighter   = instanceSafeRequire(player.PlayerScripts.Controllers.FighterController),
-        camctrl   = instanceSafeRequire(player.PlayerScripts.Controllers.CameraController),
-        utility   = instanceSafeRequire(replicatedstorage.Modules.Utility),
+        enums   = instanceSafeRequire(replicatedstorage.Modules.EnumLibrary),
+        fighter = instanceSafeRequire(player.PlayerScripts.Controllers.FighterController),
+        camctrl = instanceSafeRequire(player.PlayerScripts.Controllers.CameraController),
+        utility = instanceSafeRequire(replicatedstorage.Modules.Utility),
     }
 
     local config = {
         target = {
-            enabled        = false,
-            character      = nil,
-            auto           = false,
-            autoshoot      = true,
-            shootAttempts  = 1,
-            hitpart        = "Head",
-            lastchar       = nil,
-            lastplayer     = nil,
-            manualkey      = false,
-            immune         = false,
-            attackPosition = "default",
+            enabled             = false,
+            character           = nil,
+            auto                = false,
+            autoshoot           = true,
+            shootAttempts       = 1,
+            hitpart             = "Head",
+            lastchar            = nil,
+            lastplayer          = nil,
+            manualkey           = false,
+            immune              = false,
+            attackPosition      = "default",
             attackCustomEnabled = false,
-            weaponPick     = "primary",
-            forceWeapon    = true,
-            rageMasterOn   = false,
-            meleeFeetDrop  = 3.5,
-            underOffset    = 4,
-            customHeight   = 2,
-            customFront    = 0,
-            customSide     = 0,
-            customVertical = 0,
-            customRadius   = 0,
+            weaponPick          = "primary",
+            forceWeapon         = true,
+            rageMasterOn        = false,
+            meleeFeetDrop       = 3.5,
+            underOffset         = 4,
+            customHeight        = 2,
+            customFront         = 0,
+            customSide          = 0,
+            customVertical      = 0,
+            customRadius        = 0,
         },
         prediction = {
-            enabled     = false,
-            multiplier  = 1.2,
-            velocity    = Vector3.new(0, 0, 0),
+            enabled      = false,
+            multiplier   = 1.2,
+            velocity     = Vector3.new(0, 0, 0),
             lastposition = nil,
-            lasttime    = 0,
+            lasttime     = 0,
         },
         orbit = {
-            active    = false,
-            angle     = 0,
-            serverpos = nil,
+            active     = false,
+            angle      = 0,
+            serverpos  = nil,
             connection = nil,
-            speed     = 9000,
-            height    = 1,
-            radius    = 0,
-            savedpos  = nil,
+            speed      = 9000,
+            height     = 1,
+            radius     = 0,
+            savedpos   = nil,
         },
         state = {
             reloading        = false,
@@ -832,48 +745,48 @@ do
             lastswitch      = 0,
             currentduration = 0,
         },
-        visualizer = {
-            enabled = true,
-        },
         ragestatus = {
-            enabled         = false,
-            mode            = "static",
-            color           = Color3.fromRGB(235, 235, 235),
-            staticOffsetX   = 0,
-            staticOffsetY   = 40,
-            showAmmo        = true,
-            hideOnReload    = true,
-            lineGap         = 15,
+            enabled       = false,
+            mode          = "static",
+            color         = Color3.fromRGB(235, 235, 235),
+            staticOffsetX = 0,
+            staticOffsetY = 40,
+            showAmmo      = true,
+            hideOnReload  = true,
+            lineGap       = 15,
         },
         hitNotifications = {
-            enabled       = true,
-            color         = Color3.fromRGB(235, 235, 235),
-            textSize      = 14,
-            maxVisible    = 8,
-            duration      = 3,
-            stackGap      = 6,
-            position      = "Top Left",
-            offsetX       = 12,
-            offsetY       = 12,
-            inAnimation   = "fade bounce",
-            outAnimation  = "fade",
+            enabled         = true,
+            color           = Color3.fromRGB(235, 235, 235),
+            textSize        = 14,
+            maxVisible      = 8,
+            duration        = 3,
+            stackGap        = 6,
+            position        = "Top Left",
+            offsetX         = 12,
+            offsetY         = 12,
+            inAnimation     = "fade bounce",
+            outAnimation    = "fade",
             animInDuration  = 0.52,
             animOutDuration = 0.38,
         },
     }
 
     local ragePerf = {
-        lastAttackTick      = 0,
-        hitPartByPlayer     = {},
-        lastHitAtByPlayer   = {},
-        killStartAt         = nil,
-        lastRageStatusText  = "",
-        lastRageDetailText  = "",
-        lastRageColor       = nil,
+        lastAttackTick    = 0,
+        hitPartByPlayer   = {},
+        lastHitAtByPlayer = {},
+        killStartAt       = nil,
+        lastRageStatusText = "",
+        lastRageDetailText = "",
+        lastRageColor     = nil,
     }
 
-    local vfrSnap = { cf = nil, lv = nil, av = nil }
-    local vfrLim, vfrDead = 2147483646, 1147483646
+    -- ── Void System ────────────────────────────
+
+    local vfrSnap  = { cf = nil, lv = nil, av = nil }
+    local vfrLim   = 2147483646
+    local vfrDead  = 1147483646
 
     local function clrVoidSnap()
         vfrSnap.cf, vfrSnap.lv, vfrSnap.av = nil, nil, nil
@@ -903,9 +816,9 @@ do
                 rndSkip(-vfrLim, vfrLim, -vfrDead, vfrDead),
                 rndSkip(-vfrLim, vfrLim, -vfrDead, vfrDead)
             )
-            hrp.CFrame = CFrame.new(p) * CFrame.Angles(math.pi, math.pi, math.pi)
-            hrp.AssemblyLinearVelocity  = p
-            hrp.AssemblyAngularVelocity = p
+            hrp.CFrame                   = CFrame.new(p) * CFrame.Angles(math.pi, math.pi, math.pi)
+            hrp.AssemblyLinearVelocity   = p
+            hrp.AssemblyAngularVelocity  = p
         end)
     end
 
@@ -914,11 +827,13 @@ do
         local hrp = voidHrp()
         if not hrp then return end
         pcall(function()
-            hrp.CFrame                   = vfrSnap.cf
-            hrp.AssemblyLinearVelocity   = vfrSnap.lv
-            hrp.AssemblyAngularVelocity  = vfrSnap.av
+            hrp.CFrame                  = vfrSnap.cf
+            hrp.AssemblyLinearVelocity  = vfrSnap.lv
+            hrp.AssemblyAngularVelocity = vfrSnap.av
         end)
     end)
+
+    -- ── Helpers ────────────────────────────────
 
     local function clampVs(v)
         return math.clamp(tonumber(v) or 1, 0.1, 2)
@@ -939,7 +854,8 @@ do
         ["Knife"]=true,["Scythe"]=true,["Trowel"]=true,
     }
     local INFINITE_AMMO_WEAPONS = {
-        ["Energy Rifle"]=true, ["Energy Pistols"]=true,
+        ["Energy Rifle"]=true,
+        ["Energy Pistols"]=true,
     }
 
     local function getweapon()
@@ -997,11 +913,6 @@ do
         return weapon and weapon:lower():find("slingshot", 1, true) ~= nil
     end
 
-    local function lfItems()
-        local lf = modules.fighter and modules.fighter.LocalFighter
-        return lf and lf.Items or nil
-    end
-
     local function getammo()
         if isInfiniteWeapon() then return nil, nil, false end
         local ok, controller = pcall(function()
@@ -1046,9 +957,7 @@ do
         if partname == "Closest" then
             local mypos = player.Character
                 and player.Character:FindFirstChild("HumanoidRootPart")
-            if not mypos then
-                return character:FindFirstChild("Head")
-            end
+            if not mypos then return character:FindFirstChild("Head") end
             local closest, dist = nil, math.huge
             for _, part in pairs(character:GetChildren()) do
                 if part:IsA("BasePart") then
@@ -1078,8 +987,7 @@ do
                     if root then
                         local cam  = workspace_r.CurrentCamera
                         local sp   = cam:WorldToViewportPoint(root.Position)
-                        local spos = Vector2.new(sp.X, sp.Y)
-                        local dist = (spos - cursorpos).Magnitude
+                        local dist = (Vector2.new(sp.X, sp.Y) - cursorpos).Magnitude
                         if dist < bestDist then
                             best     = char
                             bestDist = dist
@@ -1095,9 +1003,9 @@ do
         if not config.prediction.enabled or not targetpart then
             return targetpart and targetpart.Position or Vector3.new()
         end
-        local basepos  = targetpart.Position
-        local distance = (basepos - origin).Magnitude
-        local ping     = 0
+        local basepos    = targetpart.Position
+        local distance   = (basepos - origin).Magnitude
+        local ping       = 0
         pcall(function()
             ping = game:GetService("Stats")
                 .Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
@@ -1143,7 +1051,10 @@ do
 
     local function atkCfg()
         if pickMelee() and not config.target.attackCustomEnabled then
-            return { height=0, front=0, side=0, vertical=-(config.target.meleeFeetDrop or 3.5), radius=0 }
+            return {
+                height   = 0, front = 0, side = 0,
+                vertical = -(config.target.meleeFeetDrop or 3.5), radius = 0,
+            }
         end
         if config.target.attackCustomEnabled then
             return {
@@ -1157,11 +1068,14 @@ do
         local mode   = config.target.attackPosition or "default"
         local weapon = getweapon()
         if mode == "under" then
-            return { height=0, front=0, side=0, vertical=-(config.target.underOffset or 4), radius=0 }
+            return {
+                height = 0, front = 0, side = 0,
+                vertical = -(config.target.underOffset or 4), radius = 0,
+            }
         end
         return {
             height = (weapon and weapon:lower():find("sniper")) and 8 or 2,
-            front=0, side=0, vertical=0, radius=0,
+            front = 0, side = 0, vertical = 0, radius = 0,
         }
     end
 
@@ -1177,7 +1091,10 @@ do
         local pos   = root.Position
         local look  = root.CFrame.LookVector
         local right = root.CFrame.RightVector
-        return pos + (look * s.front) + (right * s.side) + Vector3.new(0, s.vertical, 0)
+        return pos
+            + (look  * s.front)
+            + (right * s.side)
+            + Vector3.new(0, s.vertical, 0)
     end
 
     local function stopsync()
@@ -1251,7 +1168,7 @@ do
             oldpos = localfighter.Entity.RootPart.CFrame
             eqSlot()
 
-            local _weapon  = getweapon()
+            local _weapon    = getweapon()
             local checksling = isSling(_weapon)
 
             if config.voidspam.enabled and not config.target.immune then
@@ -1261,13 +1178,15 @@ do
                     local rz = math.random(-10000, 10000)
                     config.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
                     pcall(function()
-                        localfighter.Entity.RootPart.CFrame = CFrame.new(config.orbit.serverpos)
+                        localfighter.Entity.RootPart.CFrame =
+                            CFrame.new(config.orbit.serverpos)
                     end)
                     return
                 end
             end
 
-            if config.state.outofammo and not checksling and _weapon and not isInfiniteWeapon() then
+            if config.state.outofammo and not checksling
+                and _weapon and not isInfiniteWeapon() then
                 local hrp = voidHrp()
                 if hrp then
                     snapVoid(hrp)
@@ -1276,7 +1195,8 @@ do
                     local rz = math.random(-10000, 10000)
                     config.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
                     pcall(function()
-                        localfighter.Entity.RootPart.CFrame = CFrame.new(config.orbit.serverpos)
+                        localfighter.Entity.RootPart.CFrame =
+                            CFrame.new(config.orbit.serverpos)
                     end)
                 end
                 return
@@ -1311,8 +1231,6 @@ do
         if not config.target.enabled or not config.target.character
             or not config.target.autoshoot then return end
         if config.target.immune then return end
-        local weapon = getweapon()
-        local checksling = isSling(weapon)
         eqSlot()
         local lf = modules.fighter and modules.fighter.LocalFighter
         if not lf or not lf.EquippedItem then return end
@@ -1329,8 +1247,9 @@ do
         if config.state.csyncactive and config.orbit.serverpos then
             shootPos = config.orbit.serverpos
         else
-            local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            shootPos   = root and root.Position or Vector3.new()
+            local root = player.Character
+                and player.Character:FindFirstChild("HumanoidRootPart")
+            shootPos = root and root.Position or Vector3.new()
         end
         local targetPos = predict_rb(hitPart, shootPos)
 
@@ -1345,9 +1264,9 @@ do
         local equipped = lf.EquippedItem
         if equipped and equipped:Get("ObjectID") then
             ragePerf.lastAttackTick = tick()
-            local attempts = math.clamp(math.floor(
-                tonumber(config.target.shootAttempts) or 1
-            ), 1, 3)
+            local attempts = math.clamp(
+                math.floor(tonumber(config.target.shootAttempts) or 1), 1, 3
+            )
             for _ = 1, attempts do
                 pcall(function()
                     replicatedstorage.Remotes.Replication.Fighter.UseItem:FireServer(
@@ -1372,6 +1291,8 @@ do
         config.state.outofammo = not melee and (tonumber(cur) or 0) <= 0
     end
 
+    -- ── Immune Detection ───────────────────────
+
     local immuneList   = {}
     local onImmune     = {}
     local onVulnerable = {}
@@ -1379,8 +1300,8 @@ do
     runsvc.Heartbeat:Connect(function()
         for _, plr in pairs(players:GetPlayers()) do
             if plr == player then continue end
-            local char = plr.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local char   = plr.Character
+            local root   = char and char:FindFirstChild("HumanoidRootPart")
             local immune = root and root:FindFirstChild("Attachment") ~= nil
             if immune and not immuneList[plr.Name] then
                 immuneList[plr.Name] = true
@@ -1394,7 +1315,7 @@ do
 
     table.insert(onImmune, function(plr)
         if config.target.lastplayer == plr then
-            config.target.immune = true
+            config.target.immune  = true
             config.voidspam.phase = nil
             clrVoidSnap()
             stopsync()
@@ -1410,6 +1331,8 @@ do
             end
         end
     end)
+
+    -- ── Target Management ──────────────────────
 
     local function cleartarget()
         config.target.enabled    = false
@@ -1437,6 +1360,8 @@ do
             startsync()
         end
     end
+
+    -- ── Main Heartbeat ─────────────────────────
 
     runsvc.Heartbeat:Connect(function()
         tickAmmo()
@@ -1490,7 +1415,7 @@ do
     ragebot.muzzlepos   = muzzlepos_rb
     ragebot.clrVoidSnap = clrVoidSnap
 
-    -- ── Ragebot UI ──────────────────────────────────
+    -- ── Ragebot UI ─────────────────────────────
 
     local function togglekey_rb()
         if config.target.auto then return end
@@ -1617,7 +1542,8 @@ do
         end,
     })
 
-    -- Rage Visualizer
+    -- ── Rage Visual UI ─────────────────────────
+
     RageVisSec:Toggle({
         Name     = "rage status",
         Flag     = "RageStatus",
@@ -1707,7 +1633,7 @@ do
     end
 
     _G.Config = _G.Config or {}
-    local GC = _G.Config
+    local GC  = _G.Config
 
     GC.Box = GC.Box or {
         MasterEnabled = false,
@@ -1721,9 +1647,9 @@ do
             Color3 = Color3.fromRGB(255, 0, 0),
         },
     }
-    GC.Filled   = GC.Filled   or { Enable=false, Transparency=0.7, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0, Animated=false, Speed=1 }
-    GC.Glow     = GC.Glow     or { Enable=false, Transparency=0.5, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0 }
-    GC.TextESP  = GC.TextESP  or { Names=false, Distance=false, Tools=false, NameSize=8, DistanceSize=8, ToolsSize=8, NameColor=Color3.fromRGB(255,255,255), NameColor2=Color3.fromRGB(255,255,255), DistanceColor=Color3.fromRGB(255,255,255), DistanceColor2=Color3.fromRGB(255,255,255), ToolColor=Color3.fromRGB(255,255,255), ToolColor2=Color3.fromRGB(255,255,255) }
+    GC.Filled  = GC.Filled  or { Enable=false, Transparency=0.7, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0, Animated=false, Speed=1 }
+    GC.Glow    = GC.Glow    or { Enable=false, Transparency=0.5, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0 }
+    GC.TextESP = GC.TextESP or { Names=false, Distance=false, Tools=false, NameSize=8, DistanceSize=8, ToolsSize=8, NameColor=Color3.fromRGB(255,255,255), NameColor2=Color3.fromRGB(255,255,255), DistanceColor=Color3.fromRGB(255,255,255), DistanceColor2=Color3.fromRGB(255,255,255), ToolColor=Color3.fromRGB(255,255,255), ToolColor2=Color3.fromRGB(255,255,255) }
     GC.Skeleton = GC.Skeleton or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Thickness=1 }
     GC.Tracers  = GC.Tracers  or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Thickness=1, FromBottom=true }
     GC.Chams    = GC.Chams    or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Transparency=0 }
@@ -1732,23 +1658,19 @@ do
     _G.ESPObjects = _G.ESPObjects or {}
 
     local espgui = Instance.new("ScreenGui")
-    espgui.Name             = "ESP"
-    espgui.DisplayOrder     = 9e9
-    espgui.ResetOnSpawn     = false
-    espgui.IgnoreGuiInset   = true
-    espgui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-    espgui.Parent           = game.CoreGui
+    espgui.Name            = "ESP"
+    espgui.DisplayOrder    = 9e9
+    espgui.ResetOnSpawn    = false
+    espgui.IgnoreGuiInset  = true
+    espgui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+    espgui.Parent          = game.CoreGui
 
     local r15bones = {
         {"UpperTorso","Head"},{"UpperTorso","LowerTorso"},
-        {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},
-        {"LeftLowerArm","LeftHand"},
-        {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},
-        {"RightLowerArm","RightHand"},
-        {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},
-        {"LeftLowerLeg","LeftFoot"},
-        {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},
-        {"RightLowerLeg","RightFoot"},
+        {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
+        {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
+        {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
+        {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
     }
     local r6bones = {
         {"Torso","Head"},{"Torso","Left Arm"},{"Torso","Right Arm"},
@@ -1774,11 +1696,9 @@ do
 
     local function checkteammate(p)
         if not p or p == LocalPlayer then return true end
-        local myTeam   = LocalPlayer:GetAttribute("TeamID")
+        local myTeam    = LocalPlayer:GetAttribute("TeamID")
         local theirTeam = p:GetAttribute("TeamID")
-        if myTeam ~= nil and theirTeam ~= nil then
-            return myTeam == theirTeam
-        end
+        if myTeam ~= nil and theirTeam ~= nil then return myTeam == theirTeam end
         return LocalPlayer.Team and p.Team and LocalPlayer.Team == p.Team
     end
 
@@ -1810,9 +1730,8 @@ do
         if not label then return end
         local grad = label:FindFirstChild("EspTextGradient")
         if not grad then
-            grad = Instance.new("UIGradient")
-            grad.Name   = "EspTextGradient"
-            grad.Rotation = 0
+            grad      = Instance.new("UIGradient")
+            grad.Name = "EspTextGradient"
             grad.Parent = label
         end
         grad.Color = ColorSequence.new({
@@ -1823,26 +1742,22 @@ do
     end
 
     local fonts = {}
-    pcall(function()
-        fonts.main = Font.fromEnum(Enum.Font.Code)
-    end)
-    if not fonts.main then
-        fonts.main = Font.fromEnum(Enum.Font.Code)
-    end
+    pcall(function() fonts.main = Font.fromEnum(Enum.Font.Code) end)
+    if not fonts.main then fonts.main = Font.fromEnum(Enum.Font.Code) end
 
     local function makelabel(parent)
         local lbl = Instance.new("TextLabel")
-        lbl.Parent               = parent
-        lbl.Size                 = UDim2.new(0, 200, 0, 20)
+        lbl.Parent                 = parent
+        lbl.Size                   = UDim2.new(0, 200, 0, 20)
         lbl.BackgroundTransparency = 1
-        lbl.TextColor3           = Color3.fromRGB(255, 255, 255)
+        lbl.TextColor3             = Color3.fromRGB(255, 255, 255)
         lbl.TextStrokeTransparency = 0
-        lbl.TextScaled           = false
-        lbl.TextSize             = 8
-        lbl.TextStrokeColor3     = Color3.fromRGB(0, 0, 0)
-        lbl.FontFace             = fonts.main
-        lbl.TextXAlignment       = Enum.TextXAlignment.Left
-        lbl.TextYAlignment       = Enum.TextYAlignment.Top
+        lbl.TextScaled             = false
+        lbl.TextSize               = 8
+        lbl.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
+        lbl.FontFace               = fonts.main
+        lbl.TextXAlignment         = Enum.TextXAlignment.Left
+        lbl.TextYAlignment         = Enum.TextYAlignment.Top
         return lbl
     end
 
@@ -1885,15 +1800,15 @@ do
         box.filled_gradient.Parent = box.filled
 
         box.glow = Instance.new("ImageLabel")
-        box.glow.Image               = "rbxassetid://110204605000367"
-        box.glow.ScaleType           = Enum.ScaleType.Slice
-        box.glow.SliceCenter         = Rect.new(Vector2.new(21, 21), Vector2.new(79, 79))
-        box.glow.ImageTransparency   = GC.Glow.Transparency
+        box.glow.Image                 = "rbxassetid://110204605000367"
+        box.glow.ScaleType             = Enum.ScaleType.Slice
+        box.glow.SliceCenter           = Rect.new(Vector2.new(21, 21), Vector2.new(79, 79))
+        box.glow.ImageTransparency     = GC.Glow.Transparency
         box.glow.BackgroundTransparency = 1
-        box.glow.BorderSizePixel     = 0
-        box.glow.ZIndex              = 1
-        box.glow.Visible             = false
-        box.glow.Parent              = espgui
+        box.glow.BorderSizePixel       = 0
+        box.glow.ZIndex                = 1
+        box.glow.Visible               = false
+        box.glow.Parent                = espgui
 
         box.glow_gradient = Instance.new("UIGradient")
         box.glow_gradient.Color = ColorSequence.new({
@@ -1910,9 +1825,9 @@ do
         glowpad.Parent        = box.glow
 
         box.bars = {
-            hp_bars   = {},
+            hp_bars    = {},
             hp_outline = Drawing.new("Square"),
-            last_hp   = 1,
+            last_hp    = 1,
         }
         for i = 1, 50 do
             box.bars.hp_bars[i] = Drawing.new("Line")
@@ -1942,10 +1857,10 @@ do
             name  = makelabel(ng),
         }
 
-        box.Tracer = Drawing.new("Line")
-        box.Tracer.Visible    = false
-        box.Tracer.Color      = GC.Tracers.Color
-        box.Tracer.Thickness  = GC.Tracers.Thickness
+        box.Tracer          = Drawing.new("Line")
+        box.Tracer.Visible  = false
+        box.Tracer.Color    = GC.Tracers.Color
+        box.Tracer.Thickness = GC.Tracers.Thickness
 
         _G.ESPObjects[p] = box
     end
@@ -1964,8 +1879,8 @@ do
             if box.text.name  then box.text.name.Parent:Destroy()  end
         end
         box.bars.hp_outline:Remove()
-        for _, ln in pairs(box.bars.hp_bars)     do ln:Remove()  end
-        for _, ln in pairs(box.skeleton.lines)   do ln:Remove()  end
+        for _, ln in pairs(box.bars.hp_bars)      do ln:Remove() end
+        for _, ln in pairs(box.skeleton.lines)    do ln:Remove() end
         for _, ln in pairs(box.skeleton.outlines) do ln:Remove() end
         if box.Tracer then box.Tracer:Remove() end
         if box.Cham   then box.Cham:Destroy()  end
@@ -1980,12 +1895,12 @@ do
         box.box.inline.Visible  = false
         if box.filled then box.filled.Visible = false end
         if box.glow   then box.glow.Visible   = false end
-        box.text.studs.Visible = false
-        box.text.tool.Visible  = false
-        box.text.name.Visible  = false
+        box.text.studs.Visible      = false
+        box.text.tool.Visible       = false
+        box.text.name.Visible       = false
         box.bars.hp_outline.Visible = false
-        for _, ln in pairs(box.bars.hp_bars)     do ln.Visible = false end
-        for _, ln in pairs(box.skeleton.lines)   do ln.Visible = false end
+        for _, ln in pairs(box.bars.hp_bars)      do ln.Visible = false end
+        for _, ln in pairs(box.skeleton.lines)    do ln.Visible = false end
         for _, ln in pairs(box.skeleton.outlines) do ln.Visible = false end
         if box.Tracer then box.Tracer.Visible = false end
         if box.Cham   then box.Cham.Enabled   = false end
@@ -1996,19 +1911,19 @@ do
     local function getHitboxBounds(char)
         local cam = Workspace.CurrentCamera
         if not cam or not char then return nil, nil end
-        local minX, minY = math.huge, math.huge
+        local minX, minY =  math.huge,  math.huge
         local maxX, maxY = -math.huge, -math.huge
         local found = false
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") and part.Transparency < 1 then
-                local cf   = part.CFrame
-                local sz   = part.Size
+                local cf = part.CFrame
+                local sz = part.Size
                 local hx, hy, hz = sz.X/2, sz.Y/2, sz.Z/2
                 local corners = {
-                    cf*Vector3.new(-hx,-hy,-hz), cf*Vector3.new(hx,-hy,-hz),
-                    cf*Vector3.new(-hx, hy,-hz), cf*Vector3.new(hx, hy,-hz),
-                    cf*Vector3.new(-hx,-hy, hz), cf*Vector3.new(hx,-hy, hz),
-                    cf*Vector3.new(-hx, hy, hz), cf*Vector3.new(hx, hy, hz),
+                    cf*Vector3.new(-hx,-hy,-hz), cf*Vector3.new( hx,-hy,-hz),
+                    cf*Vector3.new(-hx, hy,-hz), cf*Vector3.new( hx, hy,-hz),
+                    cf*Vector3.new(-hx,-hy, hz), cf*Vector3.new( hx,-hy, hz),
+                    cf*Vector3.new(-hx, hy, hz), cf*Vector3.new( hx, hy, hz),
                 }
                 for _, corner in ipairs(corners) do
                     local sp, ok = worldToEspScreen(corner, cam)
@@ -2023,7 +1938,7 @@ do
             end
         end
         if not found then return nil, nil end
-        return Vector2.new(math.max(maxX - minX, 4), math.max(maxY - minY, 8)),
+        return Vector2.new(math.max(maxX-minX,4), math.max(maxY-minY,8)),
                Vector2.new(minX, minY)
     end
 
@@ -2040,24 +1955,24 @@ do
         size     = Vector2.new(w, h)
         position = Vector2.new(math.floor(position.X), math.floor(position.Y))
         local c2 = cfg.OutlineColor2 or cfg.OutlineColor
-        box.box.square.Visible  = true
-        box.box.square.Position = position
-        box.box.square.Size     = size
-        box.box.square.Color    = lerpcolor(cfg.OutlineColor, c2, 0.5)
+        box.box.square.Visible   = true
+        box.box.square.Position  = position
+        box.box.square.Size      = size
+        box.box.square.Color     = lerpcolor(cfg.OutlineColor, c2, 0.5)
         box.box.square.Thickness = 1
-        box.box.square.Filled   = false
-        box.box.outline.Visible  = true
-        box.box.outline.Position = position - Vector2.new(1, 1)
-        box.box.outline.Size     = size + Vector2.new(2, 2)
-        box.box.outline.Color    = Color3.new(0, 0, 0)
+        box.box.square.Filled    = false
+        box.box.outline.Visible   = true
+        box.box.outline.Position  = position - Vector2.new(1, 1)
+        box.box.outline.Size      = size + Vector2.new(2, 2)
+        box.box.outline.Color     = Color3.new(0, 0, 0)
         box.box.outline.Thickness = 1
-        box.box.outline.Filled   = false
-        box.box.inline.Visible   = true
-        box.box.inline.Position  = position + Vector2.new(1, 1)
-        box.box.inline.Size      = Vector2.new(math.max(w-2,2), math.max(h-2,4))
-        box.box.inline.Color     = Color3.new(0, 0, 0)
-        box.box.inline.Thickness = 1
-        box.box.inline.Filled    = false
+        box.box.outline.Filled    = false
+        box.box.inline.Visible    = true
+        box.box.inline.Position   = position + Vector2.new(1, 1)
+        box.box.inline.Size       = Vector2.new(math.max(w-2,2), math.max(h-2,4))
+        box.box.inline.Color      = Color3.new(0, 0, 0)
+        box.box.inline.Thickness  = 1
+        box.box.inline.Filled     = false
     end
 
     local function drawfill_esp(p, box, size, position)
@@ -2083,11 +1998,11 @@ do
         if not cfg.Enable or not (GC.Box.MasterEnabled and GC.Box.Enable) then
             box.glow.Visible = false return
         end
-        box.glow.Visible        = true
+        box.glow.Visible           = true
         box.glow.ImageTransparency = cfg.Transparency
-        box.glow.ImageColor3    = cfg.ColorStart
-        box.glow.Position       = UDim2.fromOffset(position.X - 21, position.Y - 21)
-        box.glow.Size           = UDim2.fromOffset(size.X + 42, size.Y + 42)
+        box.glow.ImageColor3       = cfg.ColorStart
+        box.glow.Position          = UDim2.fromOffset(position.X - 21, position.Y - 21)
+        box.glow.Size              = UDim2.fromOffset(size.X + 42, size.Y + 42)
         box.glow_gradient.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, cfg.ColorStart),
             ColorSequenceKeypoint.new(1, cfg.ColorEnd),
@@ -2097,7 +2012,7 @@ do
     local function drawskeleton_esp(p, box, char, hum, size, position)
         local cfg = GC.Skeleton
         if not cfg.Enable then
-            for _, ln in pairs(box.skeleton.lines)   do ln.Visible = false end
+            for _, ln in pairs(box.skeleton.lines)    do ln.Visible = false end
             for _, ol in pairs(box.skeleton.outlines) do ol.Visible = false end
             return
         end
@@ -2116,8 +2031,8 @@ do
                     local va, aOk = worldToEspScreen(pA.Position)
                     local vb, bOk = worldToEspScreen(pB.Position)
                     if aOk and bOk then
-                        local p2  = Vector2.new(va.X, va.Y)
-                        local ep  = Vector2.new(vb.X, vb.Y)
+                        local p2 = Vector2.new(va.X, va.Y)
+                        local ep = Vector2.new(vb.X, vb.Y)
                         ol.Visible   = true
                         ol.From      = p2
                         ol.To        = ep
@@ -2163,7 +2078,7 @@ do
         box.bars.hp_outline.Size     = Vector2.new(3, size.Y + 2)
         box.bars.hp_outline.Color    = Color3.new(0, 0, 0)
         box.bars.hp_outline.Filled   = false
-        local segments = math.clamp(math.floor(h / 2), 10, 50)
+        local segments = math.clamp(math.floor(h/2), 10, 50)
         for i = 1, 50 do
             local ln = box.bars.hp_bars[i]
             if i <= segments then
@@ -2191,7 +2106,7 @@ do
             box.text.name.TextSize = cfg.NameSize or 8
             ensureTextGradient(box.text.name,
                 cfg.NameColor  or Color3.fromRGB(255,255,255),
-                cfg.NameColor2 or cfg.NameColor or Color3.fromRGB(255,255,255))
+                cfg.NameColor2 or Color3.fromRGB(255,255,255))
             box.text.name.TextXAlignment = Enum.TextXAlignment.Center
         else
             box.text.name.Visible = false
@@ -2203,7 +2118,7 @@ do
             box.text.tool.TextSize = cfg.ToolsSize or 8
             ensureTextGradient(box.text.tool,
                 cfg.ToolColor  or Color3.fromRGB(255,255,255),
-                cfg.ToolColor2 or cfg.ToolColor or Color3.fromRGB(255,255,255))
+                cfg.ToolColor2 or Color3.fromRGB(255,255,255))
             box.text.tool.TextXAlignment = Enum.TextXAlignment.Left
         else
             box.text.tool.Visible = false
@@ -2215,7 +2130,7 @@ do
             box.text.studs.TextSize = cfg.DistanceSize or 8
             ensureTextGradient(box.text.studs,
                 cfg.DistanceColor  or Color3.fromRGB(255,255,255),
-                cfg.DistanceColor2 or cfg.DistanceColor or Color3.fromRGB(255,255,255))
+                cfg.DistanceColor2 or Color3.fromRGB(255,255,255))
             box.text.studs.TextXAlignment = Enum.TextXAlignment.Center
         else
             box.text.studs.Visible = false
@@ -2268,18 +2183,18 @@ do
         if not root or not hum then hideesp(p) return end
         local hrp2d, hrpOk = worldToEspScreen(root.Position)
         if not hrpOk then hideesp(p) return end
-        local distance       = dist2esp(p)
+        local distance           = dist2esp(p)
         local hitboxSize, hitboxPos = getHitboxBounds(char)
         local size, position
         if hitboxSize and hitboxPos then
             size     = Vector2.new(math.max(math.floor(hitboxSize.X),4), math.max(math.floor(hitboxSize.Y),8))
             position = Vector2.new(math.floor(hitboxPos.X), math.floor(hitboxPos.Y))
         else
-            local head       = char:FindFirstChild("Head")
-            local topWorld   = (head and head.Position + Vector3.new(0, 0.5, 0)) or (root.Position + Vector3.new(0,3,0))
+            local head        = char:FindFirstChild("Head")
+            local topWorld    = (head and head.Position + Vector3.new(0,0.5,0)) or (root.Position + Vector3.new(0,3,0))
             local bottomWorld = root.Position - Vector3.new(0,3,0)
-            local top2d, tOk = worldToEspScreen(topWorld)
-            local bot2d, bOk = worldToEspScreen(bottomWorld)
+            local top2d, tOk  = worldToEspScreen(topWorld)
+            local bot2d, bOk  = worldToEspScreen(bottomWorld)
             if not tOk or not bOk then hideesp(p) return end
             local bh  = math.abs(bot2d.Y - top2d.Y)
             local bw  = math.max(bh * 0.55, 8)
@@ -2299,7 +2214,7 @@ do
 
     local _espMasterWasOn = false
     local function stepEspUpdate(dt)
-        dt       = dt or (1/240)
+        dt          = dt or (1/240)
         tickval_esp = os.clock()
         if not GC.Box.MasterEnabled then
             if _espMasterWasOn then
@@ -2310,9 +2225,7 @@ do
         end
         _espMasterWasOn = true
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                updateesp(plr, dt)
-            end
+            if plr ~= LocalPlayer then updateesp(plr, dt) end
         end
     end
 
@@ -2333,7 +2246,7 @@ do
     end)
     Players.PlayerRemoving:Connect(RemoveBox)
 
-    -- ── ESP UI ──────────────────────────────────
+    -- ── ESP UI ─────────────────────────────────
 
     ESPSection:Toggle({
         Name     = "enable",
@@ -2349,11 +2262,11 @@ do
         Callback = function(val) GC.Box.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPBoxColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Box.OutlineColor = val end,
     }):Colorpicker({
         Flag     = "ESPBoxColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Box.OutlineColor2 = val end,
     })
 
@@ -2362,28 +2275,28 @@ do
         Flag     = "ESPHealthbar",
         Default  = false,
         Callback = function(val)
-            GC.Box.Healthbar = GC.Box.Healthbar or {}
+            GC.Box.Healthbar        = GC.Box.Healthbar or {}
             GC.Box.Healthbar.Enable = val
         end,
     }):Colorpicker({
         Flag     = "ESPHPHigh",
-        Default  = Color3.fromRGB(0,255,0),
+        Default  = Color3.fromRGB(0, 255, 0),
         Callback = function(val)
-            GC.Box.HealthLerpColors = GC.Box.HealthLerpColors or {}
+            GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
             GC.Box.HealthLerpColors.Color1 = val
         end,
     }):Colorpicker({
         Flag     = "ESPHPMid",
-        Default  = Color3.fromRGB(255,255,0),
+        Default  = Color3.fromRGB(255, 255, 0),
         Callback = function(val)
-            GC.Box.HealthLerpColors = GC.Box.HealthLerpColors or {}
+            GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
             GC.Box.HealthLerpColors.Color2 = val
         end,
     }):Colorpicker({
         Flag     = "ESPHPLow",
-        Default  = Color3.fromRGB(255,0,0),
+        Default  = Color3.fromRGB(255, 0, 0),
         Callback = function(val)
-            GC.Box.HealthLerpColors = GC.Box.HealthLerpColors or {}
+            GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
             GC.Box.HealthLerpColors.Color3 = val
         end,
     })
@@ -2395,11 +2308,11 @@ do
         Callback = function(val) GC.TextESP.Names = val end,
     }):Colorpicker({
         Flag     = "ESPNameColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.TextESP.NameColor = val end,
     }):Colorpicker({
         Flag     = "ESPNameColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.TextESP.NameColor2 = val end,
     })
 
@@ -2410,11 +2323,11 @@ do
         Callback = function(val) GC.TextESP.Distance = val end,
     }):Colorpicker({
         Flag     = "ESPDistColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.TextESP.DistanceColor = val end,
     }):Colorpicker({
         Flag     = "ESPDistColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.TextESP.DistanceColor2 = val end,
     })
 
@@ -2425,11 +2338,11 @@ do
         Callback = function(val) GC.Skeleton.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPSkelColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Skeleton.Color = val end,
     }):Colorpicker({
         Flag     = "ESPSkelColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Skeleton.Color2 = val end,
     })
 
@@ -2440,11 +2353,11 @@ do
         Callback = function(val) GC.Chams.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPChamColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Chams.Color = val end,
     }):Colorpicker({
         Flag     = "ESPChamColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Chams.Color2 = val end,
     })
 
@@ -2455,11 +2368,11 @@ do
         Callback = function(val) GC.Tracers.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPTracerColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Tracers.Color = val end,
     }):Colorpicker({
         Flag     = "ESPTracerColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Tracers.Color2 = val end,
     })
 
@@ -2470,11 +2383,11 @@ do
         Callback = function(val) GC.Filled.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPFillColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Filled.ColorStart = val end,
     }):Colorpicker({
         Flag     = "ESPFillColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Filled.ColorEnd = val end,
     })
 
@@ -2485,11 +2398,11 @@ do
         Callback = function(val) GC.Glow.Enable = val end,
     }):Colorpicker({
         Flag     = "ESPGlowColor1",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Glow.ColorStart = val end,
     }):Colorpicker({
         Flag     = "ESPGlowColor2",
-        Default  = Color3.fromRGB(255,255,255),
+        Default  = Color3.fromRGB(255, 255, 255),
         Callback = function(val) GC.Glow.ColorEnd = val end,
     })
 
@@ -2536,15 +2449,15 @@ end
 -- ══════════════════════════════════════════════
 
 do
-    local tracerEnabled    = true
-    local tracerColor      = Color3.fromRGB(255, 255, 255)
-    local tracerDuration   = 3
-    local tracerSize       = 1
-    local tracerFadeTime   = 0.5
-    local tracerLerpSpeed  = 0
-    local tracerStyle      = "Line"
-    local tracers          = {}
-    local tracerconn       = nil
+    local tracerEnabled      = true
+    local tracerColor        = Color3.fromRGB(255, 255, 255)
+    local tracerDuration     = 3
+    local tracerSize         = 1
+    local tracerFadeTime     = 0.5
+    local tracerLerpSpeed    = 0
+    local tracerStyle        = "Line"
+    local tracers            = {}
+    local tracerconn         = nil
     local tracerEffectHooked = false
 
     local lastTracerCreations = {}
@@ -2552,6 +2465,7 @@ do
     local DEDUPE_EXPIRY       = 1.0
     local DEDUPE_PRUNE_INT    = 120
     local frameCount          = 0
+    local DISABLE_TRACERS     = false
 
     local textureAssets = {
         Line      = "",
@@ -2572,7 +2486,7 @@ do
         local fp = vm:FindFirstChild("FirstPerson")
         if not fp then return nil end
         for _, model in ipairs(fp:GetChildren()) do
-            if model:IsA("Model") and model.Name:find("^"..LocalPlayer.Name) then
+            if model:IsA("Model") and model.Name:find("^" .. LocalPlayer.Name) then
                 local iv = model:FindFirstChild("ItemVisual")
                 if iv then
                     local body = iv:FindFirstChild("Body")
@@ -2601,7 +2515,7 @@ do
     local function makeLineTracer(pos3, endPos)
         local outline = Drawing.new("Line")
         outline.Thickness    = 4 * tracerSize
-        outline.Color        = Color3.new(0,0,0)
+        outline.Color        = Color3.new(0, 0, 0)
         outline.Transparency = 1
         outline.Visible      = false
         local line = Drawing.new("Line")
@@ -2647,7 +2561,7 @@ do
             beam.TextureLength = 1
             beam.TextureSpeed  = 0
         end
-        beam.Parent = Workspace.Terrain
+        beam.Parent      = Workspace.Terrain
         a0.WorldPosition = pos3
         a1.WorldPosition = endPos
         table.insert(tracers, {
@@ -2662,8 +2576,6 @@ do
             CreatedTime = tick(),
         })
     end
-
-    local DISABLE_TRACERS = false
 
     local function maketracer(pos3, endPos)
         if DISABLE_TRACERS or not pos3 or not endPos then return end
@@ -2699,8 +2611,8 @@ do
     local function updtracers()
         if #tracers == 0 then return end
         frameCount = frameCount + 1
-        local now = tick()
-        local cam = Workspace.CurrentCamera
+        local now  = tick()
+        local cam  = Workspace.CurrentCamera
 
         if frameCount % DEDUPE_PRUNE_INT == 0 then
             for k, t in next, lastTracerCreations do
@@ -2716,8 +2628,8 @@ do
             local age = now - tr.CreatedTime
             if age >= tr.Lifetime then
                 destroyTracer(tr)
-                tracers[i] = tracers[#tracers]
-                tracers[#tracers] = nil
+                tracers[i]         = tracers[#tracers]
+                tracers[#tracers]  = nil
             else
                 local fadeAlpha
                 local fadeStart = tr.Lifetime - tr.FadeTime
@@ -2732,16 +2644,15 @@ do
                     local e2, onE = cam:WorldToViewportPoint(drawEnd)
                     local s2v = Vector2.new(s2.X, s2.Y)
                     local e2v = Vector2.new(e2.X, e2.Y)
-                    if onS and onE and (e2v-s2v).Magnitude > 0.1
-                        and (e2v-s2v).Magnitude < 3000 then
-                        tr.Outline.From = s2v
-                        tr.Outline.To   = e2v
+                    if onS and onE and (e2v-s2v).Magnitude > 0.1 and (e2v-s2v).Magnitude < 3000 then
+                        tr.Outline.From        = s2v
+                        tr.Outline.To          = e2v
                         tr.Outline.Transparency = fadeAlpha
-                        tr.Outline.Visible = true
-                        tr.Line.From = s2v
-                        tr.Line.To   = e2v
-                        tr.Line.Transparency = fadeAlpha
-                        tr.Line.Visible = true
+                        tr.Outline.Visible     = true
+                        tr.Line.From           = s2v
+                        tr.Line.To             = e2v
+                        tr.Line.Transparency   = fadeAlpha
+                        tr.Line.Visible        = true
                     else
                         tr.Outline.Visible = false
                         tr.Line.Visible    = false
@@ -2749,7 +2660,7 @@ do
                 else
                     local drawEnd = getTracerDrawEnd(tr, age)
                     if tr.Attachment0 then tr.Attachment0.WorldPosition = tr.StartPos end
-                    if tr.Attachment1 then tr.Attachment1.WorldPosition = drawEnd      end
+                    if tr.Attachment1 then tr.Attachment1.WorldPosition = drawEnd     end
                     tr.Beam.Transparency = NumberSequence.new(1 - fadeAlpha)
                 end
             end
@@ -2890,42 +2801,13 @@ end
 
 -- ══════════════════════════════════════════════
 -- ██████████████████████████████████████████████
---              PLAYER SECTION
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
-
-PlayerSection:Slider({
-    Name     = "walk speed",
-    Flag     = "WalkSpeed",
-    Min      = 16, Max = 500, Default = 16, Decimals = 1, Suffix = " ws",
-    Callback = function(val)
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = val end
-    end,
-})
-
-PlayerSection:Slider({
-    Name     = "jump power",
-    Flag     = "JumpPower",
-    Min      = 50, Max = 500, Default = 50, Decimals = 1, Suffix = " jp",
-    Callback = function(val)
-        local char = LocalPlayer.Character
-        local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.JumpPower = val end
-    end,
-})
-
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
 --               MISC SECTION
 -- ██████████████████████████████████████████████
 -- ══════════════════════════════════════════════
 
 MiscSection:Button():Add("Rejoin", function()
-    local TS = game:GetService("TeleportService")
     pcall(function()
-        TS:Teleport(game.PlaceId, LocalPlayer)
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
     end)
 end)
 
