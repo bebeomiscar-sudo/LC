@@ -1,20 +1,19 @@
 -- // INSTANCE HUB
--- // Built from scratch using all noted sources
+-- // Clean rebuild using Solix Hub Library
 
 -- ══════════════════════════════════════════════
 -- SERVICES
 -- ══════════════════════════════════════════════
 
-local cloneref = cloneref or function(obj) return obj end
+local cloneref    = cloneref    or function(o) return o end
 local newcclosure = newcclosure or function(f) return f end
 
-local Players           = cloneref(game:GetService("Players"))
+local Players          = cloneref(game:GetService("Players"))
 local ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
-local RunService        = cloneref(game:GetService("RunService"))
-local UserInputService  = cloneref(game:GetService("UserInputService"))
-local Workspace         = cloneref(game:GetService("Workspace"))
-local HttpService       = cloneref(game:GetService("HttpService"))
-local GuiService        = cloneref(game:GetService("GuiService"))
+local RunService       = cloneref(game:GetService("RunService"))
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local Workspace        = cloneref(game:GetService("Workspace"))
+local GuiService       = cloneref(game:GetService("GuiService"))
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do task.wait() end
@@ -22,7 +21,7 @@ while not LocalPlayer do task.wait() end
 local Camera = Workspace.CurrentCamera
 
 -- ══════════════════════════════════════════════
--- LIBRARY LOAD
+-- LIBRARY
 -- ══════════════════════════════════════════════
 
 local Library = loadstring(game:HttpGet(
@@ -44,41 +43,35 @@ local Watermark   = Library:Watermark("Instance Hub | v2.0")
 local KeybindList = Library:KeybindList()
 
 -- ══════════════════════════════════════════════
--- TABS
+-- PAGES
 -- ══════════════════════════════════════════════
 
-local Tabs = {
-    Combat  = Window:Page({ Name = "Combat",  Columns = 2 }),
-    Visuals = Window:Page({ Name = "Visuals", Columns = 2 }),
-    World   = Window:Page({ Name = "World",   Columns = 2 }),
-    Misc    = Window:Page({ Name = "Misc",    Columns = 2 }),
-}
+local CombatPage  = Window:Page({ Name = "Combat",  Columns = 2 })
+local VisualPage  = Window:Page({ Name = "Visuals", Columns = 2 })
+local WorldPage   = Window:Page({ Name = "World",   Columns = 2 })
+local MiscPage    = Window:Page({ Name = "Misc",    Columns = 2 })
 
 -- ══════════════════════════════════════════════
 -- SECTIONS
 -- ══════════════════════════════════════════════
 
--- Combat
-local AimbotSection  = Tabs.Combat:Section({ Name = "Aimbot",      Side = 1 })
-local AimbotFovSec   = Tabs.Combat:Section({ Name = "FOV Config",  Side = 1 })
-local RagebotSection = Tabs.Combat:Section({ Name = "Ragebot",     Side = 2 })
-local RageVisSec     = Tabs.Combat:Section({ Name = "Rage Visual", Side = 2 })
+local AimbotSec   = CombatPage:Section({ Name = "Aimbot",        Side = 1 })
+local FovSec      = CombatPage:Section({ Name = "FOV Config",    Side = 1 })
+local RagebotSec  = CombatPage:Section({ Name = "Ragebot",       Side = 2 })
+local RageVisSec  = CombatPage:Section({ Name = "Rage Visuals",  Side = 2 })
 
--- Visuals
-local ESPSection = Tabs.Visuals:Section({ Name = "ESP",       Side = 1 })
-local ESPExtra   = Tabs.Visuals:Section({ Name = "ESP Extra", Side = 2 })
+local EspSec      = VisualPage:Section({ Name = "ESP",           Side = 1 })
+local EspExtraSec = VisualPage:Section({ Name = "ESP Extra",     Side = 2 })
 
--- World
-local TracerSection = Tabs.World:Section({ Name = "Bullet Tracers", Side = 1 })
+local TracerSec   = WorldPage:Section({ Name = "Bullet Tracers", Side = 1 })
 
--- Misc
-local MiscSection = Tabs.Misc:Section({ Name = "Misc", Side = 1 })
+local MiscSec     = MiscPage:Section({ Name = "Misc",            Side = 1 })
 
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
---               AIMBOT SYSTEM
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
+--
+--                      AIMBOT SYSTEM
+--
+-- ══════════════════════════════════════════════════════════════
 
 local aimbot = {
     enabled       = false,
@@ -94,70 +87,72 @@ local aimbot = {
     smoothCF      = nil,
 }
 
--- ── FOV Circle UI ──────────────────────────────
+-- ── FOV Circle ─────────────────────────────────────────────────
 
-local aimbotGui = Instance.new("ScreenGui")
-aimbotGui.Name           = "AimbotFOV"
-aimbotGui.ResetOnSpawn   = false
-aimbotGui.IgnoreGuiInset = true
-aimbotGui.DisplayOrder   = 9999
-aimbotGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-aimbotGui.Parent         = game.CoreGui
+local fovGui = Instance.new("ScreenGui")
+fovGui.Name            = "AimbotFOV"
+fovGui.ResetOnSpawn    = false
+fovGui.IgnoreGuiInset  = true
+fovGui.DisplayOrder    = 9999
+fovGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+fovGui.Parent          = game.CoreGui
 
-local aimbotFOVContainer = Instance.new("Frame")
-aimbotFOVContainer.Name                   = "FOVContainer"
-aimbotFOVContainer.BackgroundTransparency = 1
-aimbotFOVContainer.Size                   = UDim2.new(1, 0, 1, 0)
-aimbotFOVContainer.Visible                = false
-aimbotFOVContainer.Parent                 = aimbotGui
+local fovContainer = Instance.new("Frame")
+fovContainer.Name                   = "Container"
+fovContainer.BackgroundTransparency = 1
+fovContainer.Size                   = UDim2.new(1, 0, 1, 0)
+fovContainer.Visible                = false
+fovContainer.Parent                 = fovGui
 
-local aimbotFOVCircle = Instance.new("Frame")
-aimbotFOVCircle.Name                   = "FOVCircle"
-aimbotFOVCircle.BackgroundTransparency = 1
-aimbotFOVCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
-aimbotFOVCircle.Parent                 = aimbotFOVContainer
+-- Outline circle
+local fovCircle = Instance.new("Frame")
+fovCircle.Name                   = "Circle"
+fovCircle.BackgroundTransparency = 1
+fovCircle.AnchorPoint            = Vector2.new(0.5, 0.5)
+fovCircle.Parent                 = fovContainer
 
-local aimbotFOVStroke = Instance.new("UIStroke")
-aimbotFOVStroke.Thickness    = 1.5
-aimbotFOVStroke.Color        = Color3.fromRGB(255, 255, 255)
-aimbotFOVStroke.Transparency = 0
-aimbotFOVStroke.Parent       = aimbotFOVCircle
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent       = fovCircle
 
-local aimbotFOVStrokeGrad = Instance.new("UIGradient")
-aimbotFOVStrokeGrad.Rotation = 0
-aimbotFOVStrokeGrad.Color    = ColorSequence.new({
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Thickness    = 1.5
+fovStroke.Transparency = 0
+fovStroke.Parent       = fovCircle
+
+local fovStrokeGrad = Instance.new("UIGradient")
+fovStrokeGrad.Rotation = 0
+fovStrokeGrad.Color    = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
     ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
 })
-aimbotFOVStrokeGrad.Parent = aimbotFOVStroke
+fovStrokeGrad.Parent = fovStroke
 
-local aimbotFOVCorner = Instance.new("UICorner")
-aimbotFOVCorner.CornerRadius = UDim.new(1, 0)
-aimbotFOVCorner.Parent       = aimbotFOVCircle
+-- Fill circle
+local fovFill = Instance.new("Frame")
+fovFill.Name                   = "Fill"
+fovFill.AnchorPoint            = Vector2.new(0.5, 0.5)
+fovFill.BackgroundColor3       = Color3.fromRGB(255, 255, 255)
+fovFill.BackgroundTransparency = 0.7
+fovFill.BorderSizePixel        = 0
+fovFill.Visible                = false
+fovFill.ZIndex                 = 2
+fovFill.Parent                 = fovContainer
 
-local aimbotFOVFill = Instance.new("Frame")
-aimbotFOVFill.Name                   = "FOVFill"
-aimbotFOVFill.BackgroundColor3       = Color3.fromRGB(255, 255, 255)
-aimbotFOVFill.BackgroundTransparency = 0.7
-aimbotFOVFill.AnchorPoint            = Vector2.new(0.5, 0.5)
-aimbotFOVFill.BorderSizePixel        = 0
-aimbotFOVFill.Visible                = false
-aimbotFOVFill.ZIndex                 = 2
-aimbotFOVFill.Parent                 = aimbotFOVContainer
+local fovFillCorner = Instance.new("UICorner")
+fovFillCorner.CornerRadius = UDim.new(1, 0)
+fovFillCorner.Parent       = fovFill
 
-local aimbotFOVFillCorner = Instance.new("UICorner")
-aimbotFOVFillCorner.CornerRadius = UDim.new(1, 0)
-aimbotFOVFillCorner.Parent       = aimbotFOVFill
-
-local aimbotFOVFillGrad = Instance.new("UIGradient")
-aimbotFOVFillGrad.Rotation = 0
-aimbotFOVFillGrad.Color    = ColorSequence.new({
+local fovFillGrad = Instance.new("UIGradient")
+fovFillGrad.Rotation = 0
+fovFillGrad.Color    = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0,   0,   0  )),
 })
-aimbotFOVFillGrad.Parent = aimbotFOVFill
+fovFillGrad.Parent = fovFill
 
-local aimbotFOVCfg = {
+-- FOV config
+local fovCfg = {
     OutlineColor1       = Color3.fromRGB(255, 255, 255),
     OutlineColor2       = Color3.fromRGB(255, 255, 255),
     OutlineThickness    = 1.5,
@@ -165,93 +160,86 @@ local aimbotFOVCfg = {
     OutlineRotation     = 0,
     FilledEnabled       = false,
     FilledColor1        = Color3.fromRGB(255, 255, 255),
-    FilledColor2        = Color3.fromRGB(0, 0, 0),
+    FilledColor2        = Color3.fromRGB(0,   0,   0  ),
     FilledTransparency  = 0.7,
     FilledRotation      = 0,
     FilledAnimated      = false,
     FilledSpeed         = 1,
-    SpinOn              = false,
-    SpinSpd             = 1,
+    SpinEnabled         = false,
+    SpinSpeed           = 1,
 }
 
-local function updaimbotoutlinegrad()
-    aimbotFOVStrokeGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, aimbotFOVCfg.OutlineColor1),
-        ColorSequenceKeypoint.new(1, aimbotFOVCfg.OutlineColor2),
+local function refreshFovOutlineGrad()
+    fovStrokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, fovCfg.OutlineColor1),
+        ColorSequenceKeypoint.new(1, fovCfg.OutlineColor2),
     })
 end
 
-local function updaimbotfillgrad()
-    aimbotFOVFillGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, aimbotFOVCfg.FilledColor1),
-        ColorSequenceKeypoint.new(1, aimbotFOVCfg.FilledColor2),
+local function refreshFovFillGrad()
+    fovFillGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, fovCfg.FilledColor1),
+        ColorSequenceKeypoint.new(1, fovCfg.FilledColor2),
     })
 end
 
--- FOV Animation Loop
-local fovAnimClock = 0
+-- FOV animation
+local fovClock = 0
 RunService.RenderStepped:Connect(function(dt)
-    fovAnimClock += dt
+    fovClock += dt
     local cam = Workspace.CurrentCamera
     if not cam then return end
     local vp = cam.ViewportSize
-    local cx = vp.X * 0.5
-    local cy = vp.Y * 0.5
-    local r  = aimbot.fovRadius
-    local d  = r * 2
+    local cx, cy = vp.X * 0.5, vp.Y * 0.5
+    local d = aimbot.fovRadius * 2
 
-    aimbotFOVCircle.Position = UDim2.fromOffset(cx, cy)
-    aimbotFOVCircle.Size     = UDim2.fromOffset(d, d)
-    aimbotFOVFill.Position   = UDim2.fromOffset(cx, cy)
-    aimbotFOVFill.Size       = UDim2.fromOffset(d, d)
+    fovCircle.Position = UDim2.fromOffset(cx, cy)
+    fovCircle.Size     = UDim2.fromOffset(d, d)
+    fovFill.Position   = UDim2.fromOffset(cx, cy)
+    fovFill.Size       = UDim2.fromOffset(d, d)
 
-    if aimbotFOVCfg.SpinOn then
-        aimbotFOVStrokeGrad.Rotation =
-            (fovAnimClock * aimbotFOVCfg.SpinSpd * 45) % 360
+    if fovCfg.SpinEnabled then
+        fovStrokeGrad.Rotation = (fovClock * fovCfg.SpinSpeed * 45) % 360
     end
-
-    if aimbotFOVCfg.FilledAnimated then
-        aimbotFOVFillGrad.Rotation =
-            (math.sin(fovAnimClock * aimbotFOVCfg.FilledSpeed) * 90)
-            + aimbotFOVCfg.FilledRotation
+    if fovCfg.FilledAnimated then
+        fovFillGrad.Rotation =
+            (math.sin(fovClock * fovCfg.FilledSpeed) * 90) + fovCfg.FilledRotation
     end
 end)
 
--- ── Aimbot Core ────────────────────────────────
+-- ── Aimbot Core ────────────────────────────────────────────────
 
 local function clearAimbotLock()
     aimbot.lockedTarget = nil
     aimbot.smoothCF     = nil
 end
 
-local function getAimbotScreenPoint()
-    if aimbot.followMuzzle then
-        if type(aimbotfovcenter) == "function" then
-            return aimbotfovcenter()
-        end
+local function getAimbotCenter()
+    if aimbot.followMuzzle and type(aimbotfovcenter) == "function" then
+        return aimbotfovcenter()
     end
     local loc = UserInputService:GetMouseLocation()
     return Vector2.new(loc.X, loc.Y)
 end
 
-local function worldToScreen(pos, cam)
+local function w2s(pos, cam)
     cam = cam or Workspace.CurrentCamera
     local sp, vis = cam:WorldToViewportPoint(pos)
     return Vector2.new(sp.X, sp.Y), vis
 end
 
-local function closesttocursor()
-    local best, bestDist = nil, aimbot.fovRadius
-    local mp  = getAimbotScreenPoint()
-    if not mp then return nil end
-    local cam = Workspace.CurrentCamera
+local function getNearestToCursor()
+    local center   = getAimbotCenter()
+    local best     = nil
+    local bestDist = aimbot.fovRadius
+    local cam      = Workspace.CurrentCamera
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local part = p.Character:FindFirstChild(aimbot.targetPart)
             if part and part:IsDescendantOf(Workspace) then
-                local scr, on = worldToScreen(part.Position, cam)
+                local sp, on = w2s(part.Position, cam)
                 if on then
-                    local dist = (Vector2.new(scr.X, scr.Y) - mp).Magnitude
+                    local dist = (sp - center).Magnitude
                     if dist < bestDist then
                         bestDist = dist
                         best     = part
@@ -263,29 +251,21 @@ local function closesttocursor()
     return best
 end
 
-local function getAimbotLerpAlpha(dt)
-    local sm    = math.clamp(tonumber(aimbot.smoothness) or 2, 0.1, 10)
-    local curve = aimbot.aimCurve or "Linear"
+local function getAimbotAlpha(dt)
+    local sm    = math.clamp(aimbot.smoothness, 0.1, 10)
+    local curve = aimbot.aimCurve
     local speed = 6 / sm
-    if curve == "Instant" then
-        return 1
-    elseif curve == "Expo" then
-        return 1 - math.exp(-(4 / sm) * dt)
-    elseif curve == "EaseIn" then
-        local t = math.clamp(speed * dt, 0, 1)
-        return t * t
-    elseif curve == "EaseOut" then
-        local t = math.clamp(speed * dt, 0, 1)
-        return 1 - (1 - t) ^ 2
+    local t     = math.clamp(speed * dt, 0, 1)
+    if curve == "Instant"   then return 1
+    elseif curve == "Expo"  then return 1 - math.exp(-(4/sm)*dt)
+    elseif curve == "EaseIn" then return t*t
+    elseif curve == "EaseOut" then return 1-(1-t)^2
     elseif curve == "EaseInOut" then
-        local t = math.clamp(speed * dt, 0, 1)
-        if t < 0.5 then return 2 * t * t end
-        return 1 - ((-2 * t + 2) ^ 2) / 2
-    elseif curve == "Cubic" then
-        local t = math.clamp(speed * dt, 0, 1)
-        return t ^ 3
+        if t < 0.5 then return 2*t*t end
+        return 1-((-2*t+2)^2)/2
+    elseif curve == "Cubic" then return t^3
     end
-    return math.clamp(speed * dt, 0, 1)
+    return t -- Linear
 end
 
 local camController
@@ -295,71 +275,55 @@ pcall(function()
     )
 end)
 
-local function getUnstretchedCameraCFrame(cam)
-    return cam and cam.CFrame or CFrame.new()
-end
-
-local AIMBOT_RENDER_BIND = "InstanceAimbotUpdate"
-local aimbotConnection
-local aimbotUsingBind = false
+local AIMBOT_BIND   = "InstanceAimbotUpdate"
+local aimbotConn    = nil
+local aimbotIsBound = false
 
 local function stepAimbot(dt)
-    dt = dt or (1 / 240)
-    if not aimbot.enabled then
-        clearAimbotLock()
-        return
-    end
+    dt = dt or (1/240)
+    if not aimbot.enabled then clearAimbotLock() return end
+
     local cam = Workspace.CurrentCamera
     if not cam then return end
     Camera = cam
 
     if not aimbot.lockedTarget then
-        aimbot.lockedTarget = closesttocursor()
-        aimbot.smoothCF     = getUnstretchedCameraCFrame(cam)
+        aimbot.lockedTarget = getNearestToCursor()
+        aimbot.smoothCF     = cam.CFrame
         if not aimbot.lockedTarget then return end
     end
 
     if not aimbot.lockedTarget.Parent
         or not aimbot.lockedTarget:IsDescendantOf(Workspace) then
-        clearAimbotLock()
-        return
+        clearAimbotLock() return
     end
 
     local myChar = LocalPlayer.Character
-    if not myChar then return end
-    local myHead = myChar:FindFirstChild("Head")
-    if not myHead then clearAimbotLock() return end
+    if not myChar or not myChar:FindFirstChild("Head") then
+        clearAimbotLock() return
+    end
     if not camController then return end
 
-    if not aimbot.smoothCF then
-        aimbot.smoothCF = getUnstretchedCameraCFrame(cam)
-    end
+    aimbot.smoothCF = aimbot.smoothCF or cam.CFrame
 
-    local lookCF = CFrame.lookAt(
-        cam.CFrame.Position,
-        aimbot.lockedTarget.Position
-    )
-    local alpha     = getAimbotLerpAlpha(dt)
-    aimbot.smoothCF = aimbot.smoothCF:Lerp(lookCF, alpha)
+    local lookCF    = CFrame.lookAt(cam.CFrame.Position, aimbot.lockedTarget.Position)
+    aimbot.smoothCF = aimbot.smoothCF:Lerp(lookCF, getAimbotAlpha(dt))
 
-    pcall(function()
-        camController:MimicRotation(aimbot.smoothCF)
-    end)
+    pcall(function() camController:MimicRotation(aimbot.smoothCF) end)
 end
 
-local function updaimbot()
-    if aimbotConnection then
-        aimbotConnection:Disconnect()
-        aimbotConnection = nil
+local function updateAimbot()
+    -- Cleanup old connection
+    if aimbotConn then
+        aimbotConn:Disconnect()
+        aimbotConn = nil
     end
-    if aimbotUsingBind then
-        pcall(function()
-            RunService:UnbindFromRenderStep(AIMBOT_RENDER_BIND)
-        end)
-        aimbotUsingBind = false
+    if aimbotIsBound then
+        pcall(function() RunService:UnbindFromRenderStep(AIMBOT_BIND) end)
+        aimbotIsBound = false
     end
 
-    aimbotFOVContainer.Visible = aimbot.showFov
+    fovContainer.Visible = aimbot.showFov
 
     if not aimbot.enabled then
         clearAimbotLock()
@@ -367,80 +331,33 @@ local function updaimbot()
     end
 
     local ok = pcall(function()
-        RunService:UnbindFromRenderStep(AIMBOT_RENDER_BIND)
+        RunService:UnbindFromRenderStep(AIMBOT_BIND)
         RunService:BindToRenderStep(
-            AIMBOT_RENDER_BIND,
+            AIMBOT_BIND,
             Enum.RenderPriority.Camera.Value + 1,
             stepAimbot
         )
     end)
     if ok then
-        aimbotUsingBind = true
+        aimbotIsBound = true
     else
-        aimbotConnection = RunService.RenderStepped:Connect(stepAimbot)
+        aimbotConn = RunService.RenderStepped:Connect(stepAimbot)
     end
 end
 
--- ── Aimbot UI ──────────────────────────────────
+-- ── Hold / Always polling ──────────────────────────────────────
 
-AimbotSection:Dropdown({
-    Name     = "activation mode",
-    Flag     = "AimbotMode",
-    Default  = "Toggle",
-    Items    = { "Always", "Toggle", "Hold" },
-    Callback = function(val)
-        local mode = string.lower(val)
-        aimbot.keyMode = mode
-        aimbot.enabled = false
-        clearAimbotLock()
-        if mode == "always" and aimbot.masterEnabled then
-            aimbot.enabled = true
-        end
-        updaimbot()
-    end,
-})
-
-AimbotSection:Toggle({
-    Name     = "enable",
-    Flag     = "AimbotToggle",
-    Default  = false,
-    Callback = function(val)
-        aimbot.masterEnabled = val
-        if not val then
-            aimbot.enabled = false
-            clearAimbotLock()
-            updaimbot()
-            return
-        end
-        if aimbot.keyMode == "always" then
-            aimbot.enabled = true
-            updaimbot()
-        end
-    end,
-}):Keybind({
-    Flag     = "AimbotKey",
-    Default  = Enum.KeyCode.Unknown,
-    Mode     = "Toggle",
-    Callback = function(state)
-        if aimbot.keyMode ~= "toggle" then return end
-        if not aimbot.masterEnabled then return end
-        aimbot.enabled = state
-        if not state then clearAimbotLock() end
-        updaimbot()
-    end,
-})
-
--- Hold / Always polling
 RunService.RenderStepped:Connect(function()
     if aimbot.keyMode == "always" then
-        local shouldBeOn = aimbot.masterEnabled
-        if aimbot.enabled ~= shouldBeOn then
-            aimbot.enabled = shouldBeOn
-            if not shouldBeOn then clearAimbotLock() end
-            updaimbot()
+        local want = aimbot.masterEnabled
+        if aimbot.enabled ~= want then
+            aimbot.enabled = want
+            if not want then clearAimbotLock() end
+            updateAimbot()
         end
         return
     end
+
     if aimbot.keyMode == "hold" and aimbot.masterEnabled then
         local opts   = getgenv().Options or {}
         local picker = opts.AimbotKey
@@ -449,245 +366,248 @@ RunService.RenderStepped:Connect(function()
         if held ~= aimbot.enabled then
             aimbot.enabled = held
             if not held then clearAimbotLock() end
-            updaimbot()
+            updateAimbot()
         end
     end
 end)
 
-AimbotSection:Slider({
-    Name     = "smoothness",
-    Flag     = "AimbotSmoothness",
-    Min      = 0.1,
-    Max      = 10,
-    Default  = 2,
-    Decimals = 2,
+-- ── Aimbot UI ──────────────────────────────────────────────────
+
+AimbotSec:Dropdown({
+    Name     = "activation mode",
+    Flag     = "AimbotMode",
+    Default  = "Toggle",
+    Items    = { "Always", "Toggle", "Hold" },
     Callback = function(val)
-        aimbot.smoothness = math.clamp(val, 0.1, 10)
+        aimbot.keyMode = string.lower(val)
+        aimbot.enabled = false
+        clearAimbotLock()
+        if aimbot.keyMode == "always" and aimbot.masterEnabled then
+            aimbot.enabled = true
+        end
+        updateAimbot()
     end,
 })
 
-AimbotSection:Dropdown({
+AimbotSec:Toggle({
+    Name     = "enable",
+    Flag     = "AimbotToggle",
+    Default  = false,
+    Callback = function(val)
+        aimbot.masterEnabled = val
+        if not val then
+            aimbot.enabled = false
+            clearAimbotLock()
+            updateAimbot()
+            return
+        end
+        if aimbot.keyMode == "always" then
+            aimbot.enabled = true
+            updateAimbot()
+        end
+    end,
+}):Keybind({
+    Flag     = "AimbotKey",
+    Default  = Enum.KeyCode.Unknown,
+    Mode     = "Toggle",
+    Callback = function(state)
+        if aimbot.keyMode ~= "toggle" or not aimbot.masterEnabled then return end
+        aimbot.enabled = state
+        if not state then clearAimbotLock() end
+        updateAimbot()
+    end,
+})
+
+AimbotSec:Slider({
+    Name     = "smoothness",
+    Flag     = "AimbotSmoothness",
+    Min      = 0.1, Max = 10, Default = 2, Decimals = 2,
+    Callback = function(val) aimbot.smoothness = val end,
+})
+
+AimbotSec:Dropdown({
     Name     = "aim curve",
     Flag     = "AimbotCurve",
     Default  = "Linear",
-    Items    = { "Linear","Expo","EaseIn","EaseOut","EaseInOut","Cubic","Instant" },
+    Items    = { "Linear", "Expo", "EaseIn", "EaseOut", "EaseInOut", "Cubic", "Instant" },
     Callback = function(val) aimbot.aimCurve = val end,
 })
 
-AimbotSection:Dropdown({
+AimbotSec:Dropdown({
     Name     = "hit part",
     Flag     = "AimbotHitPart",
     Default  = "Head",
-    Items    = { "Head","HumanoidRootPart","Torso","UpperTorso","LowerTorso" },
+    Items    = { "Head", "HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso" },
     Callback = function(val) aimbot.targetPart = val end,
 })
 
--- ── FOV Config UI ──────────────────────────────
+-- ── FOV Config UI ──────────────────────────────────────────────
 
-AimbotFovSec:Toggle({
+FovSec:Toggle({
     Name     = "show fov",
-    Flag     = "ShowAimbotFOV",
+    Flag     = "ShowFOV",
     Default  = false,
     Callback = function(val)
-        aimbot.showFov = val
-        aimbotFOVContainer.Visible = val
+        aimbot.showFov       = val
+        fovContainer.Visible = val
     end,
 }):Colorpicker({
-    Flag     = "AimbotFOVOutlineColor1",
+    Flag     = "FOVOutlineColor1",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c)
-        aimbotFOVCfg.OutlineColor1 = c
-        updaimbotoutlinegrad()
-    end,
+    Callback = function(c) fovCfg.OutlineColor1 = c refreshFovOutlineGrad() end,
 }):Colorpicker({
-    Flag     = "AimbotFOVOutlineColor2",
+    Flag     = "FOVOutlineColor2",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c)
-        aimbotFOVCfg.OutlineColor2 = c
-        updaimbotoutlinegrad()
-    end,
+    Callback = function(c) fovCfg.OutlineColor2 = c refreshFovOutlineGrad() end,
 })
 
-AimbotFovSec:Toggle({
+FovSec:Toggle({
     Name     = "fov fill",
-    Flag     = "AimbotFOVFilled",
+    Flag     = "FOVFill",
     Default  = false,
     Callback = function(val)
-        aimbotFOVCfg.FilledEnabled = val
-        aimbotFOVFill.Visible = val
+        fovCfg.FilledEnabled = val
+        fovFill.Visible      = val
     end,
 }):Colorpicker({
-    Flag     = "AimbotFOVFillColor1",
+    Flag     = "FOVFillColor1",
     Default  = Color3.fromRGB(255, 255, 255),
-    Callback = function(c)
-        aimbotFOVCfg.FilledColor1 = c
-        updaimbotfillgrad()
-    end,
+    Callback = function(c) fovCfg.FilledColor1 = c refreshFovFillGrad() end,
 }):Colorpicker({
-    Flag     = "AimbotFOVFillColor2",
+    Flag     = "FOVFillColor2",
     Default  = Color3.fromRGB(0, 0, 0),
-    Callback = function(c)
-        aimbotFOVCfg.FilledColor2 = c
-        updaimbotfillgrad()
-    end,
+    Callback = function(c) fovCfg.FilledColor2 = c refreshFovFillGrad() end,
 })
 
-AimbotFovSec:Toggle({
+FovSec:Toggle({
     Name     = "animated fill",
-    Flag     = "AimbotFOVFillAnimated",
+    Flag     = "FOVFillAnimated",
     Default  = false,
     Callback = function(val)
-        aimbotFOVCfg.FilledAnimated = val
-        if not val then
-            aimbotFOVFillGrad.Rotation = aimbotFOVCfg.FilledRotation
-        end
+        fovCfg.FilledAnimated = val
+        if not val then fovFillGrad.Rotation = fovCfg.FilledRotation end
     end,
 })
 
-AimbotFovSec:Toggle({
+FovSec:Toggle({
     Name     = "fov spin",
-    Flag     = "AimbotFOVSpin",
+    Flag     = "FOVSpin",
     Default  = false,
     Callback = function(val)
-        aimbotFOVCfg.SpinOn = val
+        fovCfg.SpinEnabled = val
         if not val then
-            aimbotFOVStrokeGrad.Rotation = aimbotFOVCfg.OutlineRotation
-            if not aimbotFOVCfg.FilledAnimated then
-                aimbotFOVFillGrad.Rotation = aimbotFOVCfg.FilledRotation
+            fovStrokeGrad.Rotation = fovCfg.OutlineRotation
+            if not fovCfg.FilledAnimated then
+                fovFillGrad.Rotation = fovCfg.FilledRotation
             end
         end
     end,
 })
 
-AimbotFovSec:Toggle({
+FovSec:Toggle({
     Name     = "follow muzzle",
-    Flag     = "AimbotFOVFollowMuzzle",
+    Flag     = "FOVFollowMuzzle",
     Default  = false,
     Callback = function(val) aimbot.followMuzzle = val end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "fov radius",
-    Flag     = "AimbotFOV",
-    Min      = 10,
-    Max      = 1000,
-    Default  = 500,
-    Decimals = 0,
+    Flag     = "FOVRadius",
+    Min      = 10, Max = 1000, Default = 500, Decimals = 0,
     Callback = function(val) aimbot.fovRadius = val end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "outline thickness",
-    Flag     = "AimbotFOVOutlineThickness",
-    Min      = 0.5,
-    Max      = 5,
-    Default  = 1.5,
-    Decimals = 1,
+    Flag     = "FOVOutlineThickness",
+    Min      = 0.5, Max = 5, Default = 1.5, Decimals = 1,
     Callback = function(val)
-        aimbotFOVCfg.OutlineThickness = val
-        aimbotFOVStroke.Thickness = val
+        fovCfg.OutlineThickness = val
+        fovStroke.Thickness     = val
     end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "outline transparency",
-    Flag     = "AimbotFOVOutlineTransparency",
-    Min      = 0,
-    Max      = 1,
-    Default  = 0,
-    Decimals = 2,
+    Flag     = "FOVOutlineTransparency",
+    Min      = 0, Max = 1, Default = 0, Decimals = 2,
     Callback = function(val)
-        aimbotFOVCfg.OutlineTransparency = val
-        aimbotFOVStroke.Transparency = val
+        fovCfg.OutlineTransparency = val
+        fovStroke.Transparency     = val
     end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "outline rotation",
-    Flag     = "AimbotFOVOutlineRotation",
-    Min      = 0,
-    Max      = 360,
-    Default  = 0,
-    Decimals = 0,
+    Flag     = "FOVOutlineRotation",
+    Min      = 0, Max = 360, Default = 0, Decimals = 0,
     Callback = function(val)
-        aimbotFOVCfg.OutlineRotation = val
-        aimbotFOVStrokeGrad.Rotation = val
+        fovCfg.OutlineRotation = val
+        fovStrokeGrad.Rotation = val
     end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "fill transparency",
-    Flag     = "AimbotFOVFillTransparency",
-    Min      = 0,
-    Max      = 1,
-    Default  = 0.7,
-    Decimals = 2,
+    Flag     = "FOVFillTransparency",
+    Min      = 0, Max = 1, Default = 0.7, Decimals = 2,
     Callback = function(val)
-        aimbotFOVCfg.FilledTransparency = val
-        aimbotFOVFill.BackgroundTransparency = val
+        fovCfg.FilledTransparency          = val
+        fovFill.BackgroundTransparency     = val
     end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "fill rotation",
-    Flag     = "AimbotFOVFillRotation",
-    Min      = 0,
-    Max      = 360,
-    Default  = 0,
-    Decimals = 0,
+    Flag     = "FOVFillRotation",
+    Min      = 0, Max = 360, Default = 0, Decimals = 0,
     Callback = function(val)
-        aimbotFOVCfg.FilledRotation = val
-        if not aimbotFOVCfg.FilledAnimated then
-            aimbotFOVFillGrad.Rotation = val
-        end
+        fovCfg.FilledRotation = val
+        if not fovCfg.FilledAnimated then fovFillGrad.Rotation = val end
     end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "fill speed",
-    Flag     = "AimbotFOVFillSpeed",
-    Min      = 0.1,
-    Max      = 10,
-    Default  = 1,
-    Decimals = 1,
-    Callback = function(val) aimbotFOVCfg.FilledSpeed = val end,
+    Flag     = "FOVFillSpeed",
+    Min      = 0.1, Max = 10, Default = 1, Decimals = 1,
+    Callback = function(val) fovCfg.FilledSpeed = val end,
 })
 
-AimbotFovSec:Slider({
+FovSec:Slider({
     Name     = "spin speed",
-    Flag     = "AimbotFOVSpinSpd",
-    Min      = 0.1,
-    Max      = 10,
-    Default  = 1,
-    Decimals = 1,
-    Callback = function(val) aimbotFOVCfg.SpinSpd = val end,
+    Flag     = "FOVSpinSpeed",
+    Min      = 0.1, Max = 10, Default = 1, Decimals = 1,
+    Callback = function(val) fovCfg.SpinSpeed = val end,
 })
 
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
---              RAGEBOT SYSTEM
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
+--
+--                      RAGEBOT SYSTEM
+--
+-- ══════════════════════════════════════════════════════════════
 
 local ragebot = {}
 
 do
-    local replicatedstorage = cloneref(game:GetService("ReplicatedStorage"))
-    local players           = cloneref(game:GetService("Players"))
-    local runsvc            = cloneref(game:GetService("RunService"))
-    local userinput         = cloneref(game:GetService("UserInputService"))
-    local workspace_r       = cloneref(game:GetService("Workspace"))
+    local RS       = cloneref(game:GetService("ReplicatedStorage"))
+    local plrs     = cloneref(game:GetService("Players"))
+    local runsvc   = cloneref(game:GetService("RunService"))
+    local input    = cloneref(game:GetService("UserInputService"))
+    local ws       = cloneref(game:GetService("Workspace"))
+    local lp       = plrs.LocalPlayer
 
-    local player = players.LocalPlayer
-
-    local modules = {
-        enums   = instanceSafeRequire(replicatedstorage.Modules.EnumLibrary),
-        fighter = instanceSafeRequire(player.PlayerScripts.Controllers.FighterController),
-        camctrl = instanceSafeRequire(player.PlayerScripts.Controllers.CameraController),
-        utility = instanceSafeRequire(replicatedstorage.Modules.Utility),
+    local mods = {
+        enums   = instanceSafeRequire(RS.Modules.EnumLibrary),
+        fighter = instanceSafeRequire(lp.PlayerScripts.Controllers.FighterController),
+        cam     = instanceSafeRequire(lp.PlayerScripts.Controllers.CameraController),
+        util    = instanceSafeRequire(RS.Modules.Utility),
     }
 
-    local config = {
+    -- ── Config ─────────────────────────────────────────────────
+
+    local cfg = {
         target = {
             enabled             = false,
             character           = nil,
@@ -702,7 +622,6 @@ do
             attackPosition      = "default",
             attackCustomEnabled = false,
             weaponPick          = "primary",
-            forceWeapon         = true,
             rageMasterOn        = false,
             meleeFeetDrop       = 3.5,
             underOffset         = 4,
@@ -713,11 +632,11 @@ do
             customRadius        = 0,
         },
         prediction = {
-            enabled      = false,
-            multiplier   = 1.2,
-            velocity     = Vector3.new(0, 0, 0),
-            lastposition = nil,
-            lasttime     = 0,
+            enabled    = false,
+            multiplier = 1.2,
+            velocity   = Vector3.zero,
+            lastpos    = nil,
+            lasttime   = 0,
         },
         orbit = {
             active     = false,
@@ -730,10 +649,10 @@ do
             savedpos   = nil,
         },
         state = {
-            reloading        = false,
-            outofammo        = false,
-            csyncactive      = false,
-            reloadStartedAt  = 0,
+            reloading       = false,
+            outofammo       = false,
+            csyncactive     = false,
+            reloadStartedAt = 0,
         },
         voidspam = {
             enabled         = false,
@@ -747,15 +666,13 @@ do
         },
         ragestatus = {
             enabled       = false,
-            mode          = "static",
             color         = Color3.fromRGB(235, 235, 235),
             staticOffsetX = 0,
             staticOffsetY = 40,
             showAmmo      = true,
             hideOnReload  = true,
-            lineGap       = 15,
         },
-        hitNotifications = {
+        hitNotif = {
             enabled         = true,
             color           = Color3.fromRGB(235, 235, 235),
             textSize        = 14,
@@ -763,8 +680,6 @@ do
             duration        = 3,
             stackGap        = 6,
             position        = "Top Left",
-            offsetX         = 12,
-            offsetY         = 12,
             inAnimation     = "fade bounce",
             outAnimation    = "fade",
             animInDuration  = 0.52,
@@ -772,59 +687,54 @@ do
         },
     }
 
-    local ragePerf = {
+    local perf = {
         lastAttackTick    = 0,
         hitPartByPlayer   = {},
         lastHitAtByPlayer = {},
         killStartAt       = nil,
-        lastRageStatusText = "",
-        lastRageDetailText = "",
-        lastRageColor     = nil,
     }
 
-    -- ── Void System ────────────────────────────
+    -- ── Void / CSync ───────────────────────────────────────────
 
-    local vfrSnap  = { cf = nil, lv = nil, av = nil }
-    local vfrLim   = 2147483646
-    local vfrDead  = 1147483646
+    local vfrSnap = { cf=nil, lv=nil, av=nil }
+    local VFR_LIM  = 2147483646
+    local VFR_DEAD = 1147483646
 
-    local function clrVoidSnap()
+    local function clrSnap()
         vfrSnap.cf, vfrSnap.lv, vfrSnap.av = nil, nil, nil
     end
 
-    local function voidHrp()
-        local char = player.Character
+    local function getHrp()
+        local char = lp.Character
         return char and char:FindFirstChild("HumanoidRootPart")
     end
 
     local function rndSkip(mi, ma, dmi, dma)
-        local val = math.random(mi, ma)
-        while val >= dmi and val <= dma do
-            val = math.random(mi, ma)
-        end
-        return val
+        local v = math.random(mi, ma)
+        while v >= dmi and v <= dma do v = math.random(mi, ma) end
+        return v
     end
 
-    local function snapVoid(hrp)
+    local function snapToVoid(hrp)
         if not hrp then return end
         vfrSnap.cf = hrp.CFrame
         vfrSnap.lv = hrp.AssemblyLinearVelocity
         vfrSnap.av = hrp.AssemblyAngularVelocity
         pcall(function()
             local p = Vector3.new(
-                rndSkip(-vfrLim, vfrLim, -vfrDead, vfrDead),
-                rndSkip(-vfrLim, vfrLim, -vfrDead, vfrDead),
-                rndSkip(-vfrLim, vfrLim, -vfrDead, vfrDead)
+                rndSkip(-VFR_LIM, VFR_LIM, -VFR_DEAD, VFR_DEAD),
+                rndSkip(-VFR_LIM, VFR_LIM, -VFR_DEAD, VFR_DEAD),
+                rndSkip(-VFR_LIM, VFR_LIM, -VFR_DEAD, VFR_DEAD)
             )
-            hrp.CFrame                   = CFrame.new(p) * CFrame.Angles(math.pi, math.pi, math.pi)
-            hrp.AssemblyLinearVelocity   = p
-            hrp.AssemblyAngularVelocity  = p
+            hrp.CFrame                  = CFrame.new(p) * CFrame.Angles(math.pi, math.pi, math.pi)
+            hrp.AssemblyLinearVelocity  = p
+            hrp.AssemblyAngularVelocity = p
         end)
     end
 
     runsvc:BindToRenderStep("vfr_csync", Enum.RenderPriority.First.Value, function()
         if not vfrSnap.cf then return end
-        local hrp = voidHrp()
+        local hrp = getHrp()
         if not hrp then return end
         pcall(function()
             hrp.CFrame                  = vfrSnap.cf
@@ -833,53 +743,54 @@ do
         end)
     end)
 
-    -- ── Helpers ────────────────────────────────
+    -- ── Helpers ────────────────────────────────────────────────
 
     local function clampVs(v)
         return math.clamp(tonumber(v) or 1, 0.1, 2)
     end
 
-    local function randVs(minT, maxT)
-        local a = clampVs(minT)
-        local b = clampVs(maxT)
+    local function randVs(a, b)
+        a, b = clampVs(a), clampVs(b)
         if b < a then a, b = b, a end
         if a == b then return a end
         return a + math.random() * (b - a)
     end
 
-    local SLOTS = { primary = 1, secondary = 2, melee = 3 }
+    local SLOTS = { primary=1, secondary=2, melee=3 }
+
     local MELEE_NMS = {
         ["Battle Axe"]=true,["Chainsaw"]=true,["Daggers"]=true,
         ["Fists"]=true,["Gunblade"]=true,["Katana"]=true,
         ["Knife"]=true,["Scythe"]=true,["Trowel"]=true,
     }
-    local INFINITE_AMMO_WEAPONS = {
+
+    local INFINITE_WEAPONS = {
         ["Energy Rifle"]=true,
         ["Energy Pistols"]=true,
     }
 
-    local function getweapon()
-        local vm = workspace_r:FindFirstChild("ViewModels")
+    local function getWeapon()
+        local vm = ws:FindFirstChild("ViewModels")
         if not vm then return nil end
         local fp = vm:FindFirstChild("FirstPerson")
         if not fp then return nil end
         for _, child in ipairs(fp:GetChildren()) do
             local parts = {}
-            for part in child.Name:gmatch("[^-]+") do
-                table.insert(parts, part:match("^%s*(.-)%s*$"))
+            for p in child.Name:gmatch("[^-]+") do
+                table.insert(parts, p:match("^%s*(.-)%s*$"))
             end
             if #parts >= 2 then return parts[2] end
         end
         return nil
     end
 
-    local function muzzlepos_rb()
-        local vm = workspace_r:FindFirstChild("ViewModels")
+    local function getMuzzlePos()
+        local vm = ws:FindFirstChild("ViewModels")
         if not vm then return nil end
         local fp = vm:FindFirstChild("FirstPerson")
         if not fp then return nil end
         for _, model in pairs(fp:GetChildren()) do
-            if model.Name:find(player.Name) then
+            if model.Name:find(lp.Name) then
                 local iv = model:FindFirstChild("ItemVisual")
                 if iv then
                     local body = iv:FindFirstChild("Body")
@@ -896,147 +807,136 @@ do
         return nil
     end
 
-    local function isInfiniteWeapon()
-        local w = getweapon()
-        return w and INFINITE_AMMO_WEAPONS[w] == true
+    local function isInfinite()
+        local w = getWeapon()
+        return w and INFINITE_WEAPONS[w] == true
     end
 
     local function wantSlot()
-        return SLOTS[config.target.weaponPick or "primary"] or 1
+        return SLOTS[cfg.target.weaponPick or "primary"] or 1
     end
 
-    local function pickMelee()
-        return (config.target.weaponPick or "primary") == "melee"
+    local function isMeleeMode()
+        return cfg.target.weaponPick == "melee"
     end
 
-    local function isSling(weapon)
-        return weapon and weapon:lower():find("slingshot", 1, true) ~= nil
+    local function isSling(w)
+        return w and w:lower():find("slingshot", 1, true) ~= nil
     end
 
-    local function getammo()
-        if isInfiniteWeapon() then return nil, nil, false end
-        local ok, controller = pcall(function()
-            return instanceSafeRequire(
-                player.PlayerScripts.Controllers.FighterController
-            )
+    local function getAmmo()
+        if isInfinite() then return nil, nil, false end
+        local ok, fc = pcall(function()
+            return instanceSafeRequire(lp.PlayerScripts.Controllers.FighterController)
         end)
-        if ok and controller and controller.LocalFighter
-            and controller.LocalFighter.EquippedItem then
-            local item = controller.LocalFighter.EquippedItem
-            local cur, maxA, isMelee = 0, 0, false
-            local itemName = ""
+        if ok and fc and fc.LocalFighter and fc.LocalFighter.EquippedItem then
+            local item     = fc.LocalFighter.EquippedItem
+            local cur, max = 0, 0
+            local isMelee  = false
+            local nm       = ""
             pcall(function()
-                itemName = tostring(item:Get("Name") or item.Name or "")
-                cur      = item:Get("CurrentAmmo") or item:Get("Ammo") or 0
-                maxA     = item:Get("MaxAmmo") or item:Get("MaxBullets") or cur
-                if MELEE_NMS[itemName] then isMelee = true end
+                nm      = tostring(item:Get("Name") or item.Name or "")
+                cur     = item:Get("CurrentAmmo") or item:Get("Ammo") or 0
+                max     = item:Get("MaxAmmo") or item:Get("MaxBullets") or cur
+                if MELEE_NMS[nm] then isMelee = true end
             end)
-            if pickMelee() then isMelee = true end
-            return tonumber(cur) or 0, tonumber(maxA) or 0, isMelee
+            if isMeleeMode() then isMelee = true end
+            return tonumber(cur) or 0, tonumber(max) or 0, isMelee
         end
-        return 0, 0, pickMelee()
+        return 0, 0, isMeleeMode()
     end
 
-    local function isteammate(targetplayer)
-        if not targetplayer then return false end
-        return player:GetAttribute("TeamID") == targetplayer:GetAttribute("TeamID")
+    local function isTeammate(tp)
+        if not tp then return false end
+        return lp:GetAttribute("TeamID") == tp:GetAttribute("TeamID")
     end
 
-    local function valid(char)
+    local function isValid(char)
         if not char or not char.Parent then return false end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return false end
         if not char:FindFirstChild("HumanoidRootPart") then return false end
-        local tp = players:GetPlayerFromCharacter(char)
-        if not tp or isteammate(tp) then return false end
+        local tp = plrs:GetPlayerFromCharacter(char)
+        if not tp or isTeammate(tp) then return false end
         return true
     end
 
-    local function hitpartfromname(character, partname)
-        if not character then return nil end
-        if partname == "Closest" then
-            local mypos = player.Character
-                and player.Character:FindFirstChild("HumanoidRootPart")
-            if not mypos then return character:FindFirstChild("Head") end
-            local closest, dist = nil, math.huge
-            for _, part in pairs(character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    local d = (part.Position - mypos.Position).Magnitude
-                    if d < dist then dist = d closest = part end
+    local function getHitPart(char, name)
+        if not char then return nil end
+        if name == "Closest" then
+            local myHrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            if not myHrp then return char:FindFirstChild("Head") end
+            local best, bestD = nil, math.huge
+            for _, p in pairs(char:GetChildren()) do
+                if p:IsA("BasePart") then
+                    local d = (p.Position - myHrp.Position).Magnitude
+                    if d < bestD then bestD=d best=p end
                 end
             end
-            return closest or character:FindFirstChild("Head")
-        elseif partname == "Random" then
-            local parts = { "Head", "HumanoidRootPart", "UpperTorso" }
-            return character:FindFirstChild(parts[math.random(#parts)])
-                or character:FindFirstChild("Head")
+            return best or char:FindFirstChild("Head")
+        elseif name == "Random" then
+            local pool = { "Head", "HumanoidRootPart", "UpperTorso" }
+            return char:FindFirstChild(pool[math.random(#pool)])
+                or char:FindFirstChild("Head")
         else
-            return character:FindFirstChild(partname)
-                or character:FindFirstChild("Head")
+            return char:FindFirstChild(name) or char:FindFirstChild("Head")
         end
     end
 
-    local function nearest_rb()
-        local cursorpos = userinput:GetMouseLocation()
-        local best, bestDist = nil, math.huge
-        for _, tp in players:GetPlayers() do
-            if tp ~= player and tp.Character then
-                local char = tp.Character
-                if valid(char) then
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        local cam  = workspace_r.CurrentCamera
-                        local sp   = cam:WorldToViewportPoint(root.Position)
-                        local dist = (Vector2.new(sp.X, sp.Y) - cursorpos).Magnitude
-                        if dist < bestDist then
-                            best     = char
-                            bestDist = dist
-                        end
-                    end
+    local function getNearestRage()
+        local cursor  = input:GetMouseLocation()
+        local best    = nil
+        local bestD   = math.huge
+        for _, tp in plrs:GetPlayers() do
+            if tp ~= lp and tp.Character and isValid(tp.Character) then
+                local root = tp.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    local cam = ws.CurrentCamera
+                    local sp  = cam:WorldToViewportPoint(root.Position)
+                    local d   = (Vector2.new(sp.X, sp.Y) - cursor).Magnitude
+                    if d < bestD then bestD=d best=tp.Character end
                 end
             end
         end
         return best
     end
 
-    local function predict_rb(targetpart, origin)
-        if not config.prediction.enabled or not targetpart then
-            return targetpart and targetpart.Position or Vector3.new()
+    local function predict(part, origin)
+        if not cfg.prediction.enabled or not part then
+            return part and part.Position or Vector3.zero
         end
-        local basepos    = targetpart.Position
-        local distance   = (basepos - origin).Magnitude
-        local ping       = 0
+        local base = part.Position
+        local dist = (base - origin).Magnitude
+        local ping = 0
         pcall(function()
             ping = game:GetService("Stats")
                 .Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
         end)
-        local traveltime = distance / 3000
-        local totaltime  = (traveltime + ping) * config.prediction.multiplier
-        return basepos + (config.prediction.velocity * totaltime)
+        return base + (cfg.prediction.velocity * ((dist/3000 + ping) * cfg.prediction.multiplier))
     end
 
-    local function canuse()
-        local char = player.Character
+    local function canFire()
+        local char = lp.Character
         if not char then return false end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return false end
-        if isInfiniteWeapon() then return true end
-        local cur, _, melee = getammo()
+        if isInfinite() then return true end
+        local cur, _, melee = getAmmo()
         if cur == nil then return true end
         return cur > 0 or melee
     end
 
-    local localfighter = modules.fighter.LocalFighter
-    local oldpos
+    local lf   = mods.fighter.LocalFighter
+    local oldp = nil
 
-    local function eqSlot()
-        if not (config.target.enabled or config.target.rageMasterOn) then return end
+    local function equipSlot()
+        if not (cfg.target.enabled or cfg.target.rageMasterOn) then return end
         local want = wantSlot()
-        local lf   = modules.fighter and modules.fighter.LocalFighter
-        if not lf then return end
+        local lfr  = mods.fighter and mods.fighter.LocalFighter
+        if not lfr then return end
         pcall(function()
-            if lf.EquipItem then lf:EquipItem(want) end
-            if lf.Equip     then lf:Equip(want)     end
+            if lfr.EquipItem then lfr:EquipItem(want) end
+            if lfr.Equip     then lfr:Equip(want)     end
         end)
         pcall(function()
             local vim = game:GetService("VirtualInputManager")
@@ -1049,231 +949,204 @@ do
         end)
     end
 
-    local function atkCfg()
-        if pickMelee() and not config.target.attackCustomEnabled then
+    local function getAtkCfg()
+        if isMeleeMode() and not cfg.target.attackCustomEnabled then
+            return { height=0, front=0, side=0, vertical=-(cfg.target.meleeFeetDrop), radius=0 }
+        end
+        if cfg.target.attackCustomEnabled then
             return {
-                height   = 0, front = 0, side = 0,
-                vertical = -(config.target.meleeFeetDrop or 3.5), radius = 0,
+                height   = cfg.target.customHeight,
+                front    = cfg.target.customFront,
+                side     = cfg.target.customSide,
+                vertical = cfg.target.customVertical,
+                radius   = cfg.target.customRadius,
             }
         end
-        if config.target.attackCustomEnabled then
-            return {
-                height   = config.target.customHeight   or 2,
-                front    = config.target.customFront    or 0,
-                side     = config.target.customSide     or 0,
-                vertical = config.target.customVertical or 0,
-                radius   = config.target.customRadius   or 0,
-            }
-        end
-        local mode   = config.target.attackPosition or "default"
-        local weapon = getweapon()
-        if mode == "under" then
-            return {
-                height = 0, front = 0, side = 0,
-                vertical = -(config.target.underOffset or 4), radius = 0,
-            }
+        local w = getWeapon()
+        if cfg.target.attackPosition == "under" then
+            return { height=0, front=0, side=0, vertical=-cfg.target.underOffset, radius=0 }
         end
         return {
-            height = (weapon and weapon:lower():find("sniper")) and 8 or 2,
-            front = 0, side = 0, vertical = 0, radius = 0,
+            height = (w and w:lower():find("sniper")) and 8 or 2,
+            front=0, side=0, vertical=0, radius=0,
         }
     end
 
-    local function refreshAtk()
-        local s = atkCfg()
-        config.orbit.height = s.height
-        config.orbit.radius = s.radius or 0
+    local function refreshOrbit()
+        local s = getAtkCfg()
+        cfg.orbit.height = s.height
+        cfg.orbit.radius = s.radius or 0
     end
 
-    local function orbBase(root)
+    local function getOrbitBase(root)
         if not root then return Vector3.zero end
-        local s     = atkCfg()
-        local pos   = root.Position
-        local look  = root.CFrame.LookVector
-        local right = root.CFrame.RightVector
-        return pos
-            + (look  * s.front)
-            + (right * s.side)
+        local s = getAtkCfg()
+        return root.Position
+            + (root.CFrame.LookVector  * s.front)
+            + (root.CFrame.RightVector * s.side)
             + Vector3.new(0, s.vertical, 0)
     end
 
-    local function stopsync()
-        if not config.state.csyncactive then return end
-        if config.orbit.connection then
-            config.orbit.connection:Disconnect()
-            config.orbit.connection = nil
+    local function stopSync()
+        if not cfg.state.csyncactive then return end
+        if cfg.orbit.connection then
+            cfg.orbit.connection:Disconnect()
+            cfg.orbit.connection = nil
         end
-        config.state.csyncactive = false
-        config.orbit.active      = false
-        clrVoidSnap()
-        config.voidspam.phase    = nil
-        if config.orbit.savedpos and localfighter
-            and localfighter.Entity and localfighter.Entity.RootPart then
-            pcall(function()
-                localfighter.Entity.RootPart.CFrame = config.orbit.savedpos
-            end)
+        cfg.state.csyncactive = false
+        cfg.orbit.active      = false
+        clrSnap()
+        cfg.voidspam.phase = nil
+        if cfg.orbit.savedpos and lf and lf.Entity and lf.Entity.RootPart then
+            pcall(function() lf.Entity.RootPart.CFrame = cfg.orbit.savedpos end)
         end
-        config.orbit.serverpos = nil
-        config.orbit.savedpos  = nil
-        oldpos                 = nil
+        cfg.orbit.serverpos = nil
+        cfg.orbit.savedpos  = nil
+        oldp = nil
     end
 
     local function tickVoidSpam()
-        if not config.voidspam.enabled then return end
-        local now     = tick()
-        local elapsed = now - config.voidspam.lastswitch
-        if config.voidspam.phase == "shoot" then
-            if elapsed >= config.voidspam.currentduration then
-                config.voidspam.phase           = "hide"
-                config.voidspam.currentduration = randVs(config.voidspam.hide_min, config.voidspam.hide_max)
-                config.voidspam.lastswitch      = now
+        if not cfg.voidspam.enabled then return end
+        local now = tick()
+        local el  = now - cfg.voidspam.lastswitch
+        if cfg.voidspam.phase == "shoot" then
+            if el >= cfg.voidspam.currentduration then
+                cfg.voidspam.phase           = "hide"
+                cfg.voidspam.currentduration = randVs(cfg.voidspam.hide_min, cfg.voidspam.hide_max)
+                cfg.voidspam.lastswitch      = now
             end
-        elseif config.voidspam.phase == "hide" then
-            if elapsed >= config.voidspam.currentduration then
-                config.voidspam.phase           = "shoot"
-                config.voidspam.currentduration = randVs(config.voidspam.shoot_min, config.voidspam.shoot_max)
-                config.voidspam.lastswitch      = now
+        elseif cfg.voidspam.phase == "hide" then
+            if el >= cfg.voidspam.currentduration then
+                cfg.voidspam.phase           = "shoot"
+                cfg.voidspam.currentduration = randVs(cfg.voidspam.shoot_min, cfg.voidspam.shoot_max)
+                cfg.voidspam.lastswitch      = now
             end
         else
-            config.voidspam.phase           = "shoot"
-            config.voidspam.currentduration = randVs(config.voidspam.shoot_min, config.voidspam.shoot_max)
-            config.voidspam.lastswitch      = now
+            cfg.voidspam.phase           = "shoot"
+            cfg.voidspam.currentduration = randVs(cfg.voidspam.shoot_min, cfg.voidspam.shoot_max)
+            cfg.voidspam.lastswitch      = now
         end
     end
 
-    local function startsync()
-        if config.state.csyncactive then return end
-        if config.target.immune then return end
-        if not config.target.character or not valid(config.target.character) then return end
-        eqSlot()
-        config.state.csyncactive = true
-        config.orbit.active      = true
-        refreshAtk()
-        if not config.orbit.savedpos then
-            if localfighter and localfighter.Entity and localfighter.Entity.RootPart then
-                config.orbit.savedpos = localfighter.Entity.RootPart.CFrame
-            end
+    local function startSync()
+        if cfg.state.csyncactive or cfg.target.immune then return end
+        if not cfg.target.character or not isValid(cfg.target.character) then return end
+        equipSlot()
+        cfg.state.csyncactive = true
+        cfg.orbit.active      = true
+        refreshOrbit()
+        if not cfg.orbit.savedpos and lf and lf.Entity and lf.Entity.RootPart then
+            cfg.orbit.savedpos = lf.Entity.RootPart.CFrame
         end
-        config.orbit.connection = runsvc.Heartbeat:Connect(function(dt)
-            if not config.state.csyncactive then return end
-            if config.target.immune then stopsync() return end
-            if not config.target.character or not valid(config.target.character) then
-                stopsync() return
-            end
-            if not localfighter or not localfighter.Entity
-                or not localfighter.Entity.RootPart then
-                stopsync() return
-            end
-            refreshAtk()
-            oldpos = localfighter.Entity.RootPart.CFrame
-            eqSlot()
+        cfg.orbit.connection = runsvc.Heartbeat:Connect(function(dt)
+            if not cfg.state.csyncactive then return end
+            if cfg.target.immune then stopSync() return end
+            if not cfg.target.character or not isValid(cfg.target.character) then stopSync() return end
+            if not lf or not lf.Entity or not lf.Entity.RootPart then stopSync() return end
 
-            local _weapon    = getweapon()
-            local checksling = isSling(_weapon)
+            refreshOrbit()
+            oldp = lf.Entity.RootPart.CFrame
+            equipSlot()
 
-            if config.voidspam.enabled and not config.target.immune then
+            local weapon = getWeapon()
+            local sling  = isSling(weapon)
+
+            -- VoidSpam phase
+            if cfg.voidspam.enabled and not cfg.target.immune and not sling then
                 tickVoidSpam()
-                if config.voidspam.phase == "hide" and not checksling then
+                if cfg.voidspam.phase == "hide" then
                     local rx = math.random(-10000, 10000)
                     local rz = math.random(-10000, 10000)
-                    config.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
+                    cfg.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
                     pcall(function()
-                        localfighter.Entity.RootPart.CFrame =
-                            CFrame.new(config.orbit.serverpos)
+                        lf.Entity.RootPart.CFrame = CFrame.new(cfg.orbit.serverpos)
                     end)
                     return
                 end
             end
 
-            if config.state.outofammo and not checksling
-                and _weapon and not isInfiniteWeapon() then
-                local hrp = voidHrp()
+            -- Out of ammo → void
+            if cfg.state.outofammo and not sling and weapon and not isInfinite() then
+                local hrp = getHrp()
                 if hrp then
-                    snapVoid(hrp)
+                    snapToVoid(hrp)
                 else
                     local rx = math.random(-10000, 10000)
                     local rz = math.random(-10000, 10000)
-                    config.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
+                    cfg.orbit.serverpos = Vector3.new(rx, -99999999999, rz)
                     pcall(function()
-                        localfighter.Entity.RootPart.CFrame =
-                            CFrame.new(config.orbit.serverpos)
+                        lf.Entity.RootPart.CFrame = CFrame.new(cfg.orbit.serverpos)
                     end)
                 end
                 return
             end
 
-            if not config.target.character then stopsync() return end
-            local root = config.target.character:FindFirstChild("HumanoidRootPart")
-            if not root then stopsync() return end
+            -- Orbit target
+            local root = cfg.target.character:FindFirstChild("HumanoidRootPart")
+            if not root then stopSync() return end
 
-            local targetpos        = orbBase(root)
-            config.orbit.angle     = config.orbit.angle + (config.orbit.speed * dt)
-            local offset           = Vector3.new(
-                math.cos(config.orbit.angle) * config.orbit.radius,
-                config.orbit.height,
-                math.sin(config.orbit.angle) * config.orbit.radius
+            cfg.orbit.angle    = cfg.orbit.angle + (cfg.orbit.speed * dt)
+            cfg.orbit.serverpos = getOrbitBase(root) + Vector3.new(
+                math.cos(cfg.orbit.angle) * cfg.orbit.radius,
+                cfg.orbit.height,
+                math.sin(cfg.orbit.angle) * cfg.orbit.radius
             )
-            config.orbit.serverpos = targetpos + offset
 
-            if localfighter and localfighter.Entity and localfighter.Entity.RootPart then
-                local newPos = CFrame.new(config.orbit.serverpos)
-                local dist   = (newPos.Position - oldpos.Position).Magnitude
-                if dist < 2000 then
-                    localfighter.Entity.RootPart.CFrame = newPos
-                    config.orbit.savedpos = oldpos
+            if lf.Entity.RootPart then
+                local newCF = CFrame.new(cfg.orbit.serverpos)
+                if (newCF.Position - oldp.Position).Magnitude < 2000 then
+                    lf.Entity.RootPart.CFrame = newCF
+                    cfg.orbit.savedpos        = oldp
                 end
             end
         end)
     end
 
-    local function autoshoot()
-        if config.voidspam.enabled and config.voidspam.phase == "hide" then return end
-        if not config.target.enabled or not config.target.character
-            or not config.target.autoshoot then return end
-        if config.target.immune then return end
-        eqSlot()
-        local lf = modules.fighter and modules.fighter.LocalFighter
-        if not lf or not lf.EquippedItem then return end
-        if not isInfiniteWeapon() then
-            if config.state.reloading or config.state.outofammo then return end
-            if not canuse() then return end
+    local function autoShoot()
+        if cfg.voidspam.enabled and cfg.voidspam.phase == "hide" then return end
+        if not cfg.target.enabled or not cfg.target.character
+            or not cfg.target.autoshoot or cfg.target.immune then return end
+
+        equipSlot()
+        local lfr = mods.fighter and mods.fighter.LocalFighter
+        if not lfr or not lfr.EquippedItem then return end
+        if not isInfinite() then
+            if cfg.state.reloading or cfg.state.outofammo then return end
+            if not canFire() then return end
         end
-        local targetChar = config.target.character
-        if not valid(targetChar) then return end
-        local hitPart = hitpartfromname(targetChar, config.target.hitpart)
+        if not isValid(cfg.target.character) then return end
+
+        local hitPart = getHitPart(cfg.target.character, cfg.target.hitpart)
         if not hitPart then return end
 
         local shootPos
-        if config.state.csyncactive and config.orbit.serverpos then
-            shootPos = config.orbit.serverpos
+        if cfg.state.csyncactive and cfg.orbit.serverpos then
+            shootPos = cfg.orbit.serverpos
         else
-            local root = player.Character
-                and player.Character:FindFirstChild("HumanoidRootPart")
-            shootPos = root and root.Position or Vector3.new()
+            local root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            shootPos   = root and root.Position or Vector3.zero
         end
-        local targetPos = predict_rb(hitPart, shootPos)
 
+        local targetPos = predict(hitPart, shootPos)
         local data = {
             [utf8.char(1)] = {
-                [utf8.char(0)] = modules.utility:EncodeCFrame(CFrame.new(shootPos, targetPos)),
-                [utf8.char(1)] = modules.utility:EncodeCFrame(CFrame.new(shootPos, targetPos)),
+                [utf8.char(0)] = mods.util:EncodeCFrame(CFrame.new(shootPos, targetPos)),
+                [utf8.char(1)] = mods.util:EncodeCFrame(CFrame.new(shootPos, targetPos)),
                 [utf8.char(2)] = hitPart,
-                [utf8.char(3)] = modules.utility:EncodeCFrame(CFrame.new(0.43, 0.25, 0.42)),
+                [utf8.char(3)] = mods.util:EncodeCFrame(CFrame.new(0.43, 0.25, 0.42)),
             },
         }
-        local equipped = lf.EquippedItem
-        if equipped and equipped:Get("ObjectID") then
-            ragePerf.lastAttackTick = tick()
-            local attempts = math.clamp(
-                math.floor(tonumber(config.target.shootAttempts) or 1), 1, 3
-            )
+
+        local eq = lfr.EquippedItem
+        if eq and eq:Get("ObjectID") then
+            perf.lastAttackTick = tick()
+            local attempts = math.clamp(math.floor(cfg.target.shootAttempts), 1, 3)
             for _ = 1, attempts do
                 pcall(function()
-                    replicatedstorage.Remotes.Replication.Fighter.UseItem:FireServer(
-                        equipped:Get("ObjectID"),
-                        modules.enums:ToEnum("StartShooting"),
-                        data,
-                        nil
+                    RS.Remotes.Replication.Fighter.UseItem:FireServer(
+                        eq:Get("ObjectID"),
+                        mods.enums:ToEnum("StartShooting"),
+                        data, nil
                     )
                 end)
             end
@@ -1281,357 +1154,357 @@ do
     end
 
     local function tickAmmo()
-        if isInfiniteWeapon() then
-            config.state.outofammo      = false
-            config.state.reloading      = false
-            config.state.reloadStartedAt = 0
+        if isInfinite() then
+            cfg.state.outofammo = false
+            cfg.state.reloading = false
             return
         end
-        local cur, _, melee = getammo()
-        config.state.outofammo = not melee and (tonumber(cur) or 0) <= 0
+        local cur, _, melee = getAmmo()
+        cfg.state.outofammo = not melee and (tonumber(cur) or 0) <= 0
     end
 
-    -- ── Immune Detection ───────────────────────
+    -- ── Immune Detection ───────────────────────────────────────
 
     local immuneList   = {}
     local onImmune     = {}
     local onVulnerable = {}
 
     runsvc.Heartbeat:Connect(function()
-        for _, plr in pairs(players:GetPlayers()) do
-            if plr == player then continue end
-            local char   = plr.Character
-            local root   = char and char:FindFirstChild("HumanoidRootPart")
-            local immune = root and root:FindFirstChild("Attachment") ~= nil
-            if immune and not immuneList[plr.Name] then
-                immuneList[plr.Name] = true
-                for _, cb in pairs(onImmune) do cb(plr) end
-            elseif not immune and immuneList[plr.Name] then
-                immuneList[plr.Name] = nil
-                for _, cb in pairs(onVulnerable) do cb(plr) end
+        for _, tp in pairs(plrs:GetPlayers()) do
+            if tp == lp then continue end
+            local char  = tp.Character
+            local root  = char and char:FindFirstChild("HumanoidRootPart")
+            local imm   = root and root:FindFirstChild("Attachment") ~= nil
+            if imm and not immuneList[tp.Name] then
+                immuneList[tp.Name] = true
+                for _, cb in pairs(onImmune) do cb(tp) end
+            elseif not imm and immuneList[tp.Name] then
+                immuneList[tp.Name] = nil
+                for _, cb in pairs(onVulnerable) do cb(tp) end
             end
         end
     end)
 
-    table.insert(onImmune, function(plr)
-        if config.target.lastplayer == plr then
-            config.target.immune  = true
-            config.voidspam.phase = nil
-            clrVoidSnap()
-            stopsync()
+    table.insert(onImmune, function(tp)
+        if cfg.target.lastplayer == tp then
+            cfg.target.immune  = true
+            cfg.voidspam.phase = nil
+            clrSnap()
+            stopSync()
         end
     end)
 
-    table.insert(onVulnerable, function(plr)
-        if config.target.lastplayer == plr then
-            config.target.immune = false
-            if config.target.enabled and config.target.character
-                and valid(config.target.character) then
-                startsync()
+    table.insert(onVulnerable, function(tp)
+        if cfg.target.lastplayer == tp then
+            cfg.target.immune = false
+            if cfg.target.enabled and cfg.target.character
+                and isValid(cfg.target.character) then
+                startSync()
             end
         end
     end)
 
-    -- ── Target Management ──────────────────────
+    -- ── Target Management ──────────────────────────────────────
 
-    local function cleartarget()
-        config.target.enabled    = false
-        stopsync()
-        config.target.character  = nil
-        config.target.lastchar   = nil
-        config.target.lastplayer = nil
-        config.target.manualkey  = false
-        config.target.immune     = false
+    local function clearTarget()
+        cfg.target.enabled    = false
+        stopSync()
+        cfg.target.character  = nil
+        cfg.target.lastchar   = nil
+        cfg.target.lastplayer = nil
+        cfg.target.manualkey  = false
+        cfg.target.immune     = false
     end
 
-    local function settarget(char)
+    local function setTarget(char)
         if not char then return end
-        local tp = players:GetPlayerFromCharacter(char)
-        config.target.enabled    = true
-        config.target.character  = char
-        config.target.lastchar   = char
-        config.target.lastplayer = tp
-        config.target.immune     = false
+        local tp = plrs:GetPlayerFromCharacter(char)
+        cfg.target.enabled    = true
+        cfg.target.character  = char
+        cfg.target.lastchar   = char
+        cfg.target.lastplayer = tp
+        cfg.target.immune     = false
         local root = char:FindFirstChild("HumanoidRootPart")
         if root and root:FindFirstChild("Attachment") then
-            config.target.immune = true
+            cfg.target.immune = true
         else
-            eqSlot()
-            startsync()
+            equipSlot()
+            startSync()
         end
     end
 
-    -- ── Main Heartbeat ─────────────────────────
+    -- ── Main Loop ──────────────────────────────────────────────
 
     runsvc.Heartbeat:Connect(function()
         tickAmmo()
-        if config.target.auto and not config.target.manualkey then
-            local cur, _, melee = getammo()
-            local hasammo = cur == nil or cur > 0 or melee
-            if hasammo and not config.state.reloading then
-                if not config.target.enabled
-                    or not config.target.character
-                    or not valid(config.target.character) then
-                    local newtarget = nearest_rb()
-                    if newtarget then
-                        if config.target.enabled then stopsync() end
-                        settarget(newtarget)
+
+        if cfg.target.auto and not cfg.target.manualkey then
+            local cur, _, melee = getAmmo()
+            local hasAmmo = cur == nil or cur > 0 or melee
+            if hasAmmo and not cfg.state.reloading then
+                if not cfg.target.enabled
+                    or not cfg.target.character
+                    or not isValid(cfg.target.character) then
+                    local t = getNearestRage()
+                    if t then
+                        if cfg.target.enabled then stopSync() end
+                        setTarget(t)
                     end
                 end
             end
         end
-        if config.target.enabled and config.target.character then
-            if not valid(config.target.character) then
-                cleartarget()
-                return
-            end
-            eqSlot()
-            if config.target.autoshoot and not config.target.immune then
-                autoshoot()
+
+        if cfg.target.enabled and cfg.target.character then
+            if not isValid(cfg.target.character) then clearTarget() return end
+            equipSlot()
+            if cfg.target.autoshoot and not cfg.target.immune then
+                autoShoot()
             end
         end
     end)
 
     -- Camera hook
-    local oldcamupdate = modules.camctrl.Update
-    modules.camctrl.Update = function(...)
-        if config.state.csyncactive and localfighter
-            and localfighter.Entity and localfighter.Entity.RootPart and oldpos then
-            localfighter.Entity.RootPart.CFrame = oldpos
+    local oldCamUpdate = mods.cam.Update
+    mods.cam.Update = function(...)
+        if cfg.state.csyncactive and lf and lf.Entity and lf.Entity.RootPart and oldp then
+            lf.Entity.RootPart.CFrame = oldp
         end
-        return oldcamupdate(...)
+        return oldCamUpdate(...)
     end
 
-    ragebot.config      = config
-    ragebot.ragePerf    = ragePerf
-    ragebot.nearest     = nearest_rb
-    ragebot.settarget   = settarget
-    ragebot.cleartarget = cleartarget
-    ragebot.valid       = valid
-    ragebot.player      = player
-    ragebot.eqSlot      = eqSlot
-    ragebot.refreshAtk  = refreshAtk
-    ragebot.getammo     = getammo
-    ragebot.muzzlepos   = muzzlepos_rb
-    ragebot.clrVoidSnap = clrVoidSnap
+    -- Export
+    ragebot.cfg        = cfg
+    ragebot.perf       = perf
+    ragebot.setTarget  = setTarget
+    ragebot.clearTarget = clearTarget
+    ragebot.getNearestRage = getNearestRage
+    ragebot.clrSnap    = clrSnap
 
-    -- ── Ragebot UI ─────────────────────────────
+    -- ── Ragebot UI ─────────────────────────────────────────────
 
-    local function togglekey_rb()
-        if config.target.auto then return end
-        if config.target.enabled and config.target.character then
-            cleartarget()
+    local function toggleRageKey()
+        if cfg.target.auto then return end
+        if cfg.target.enabled and cfg.target.character then
+            clearTarget()
         else
-            local target = nearest_rb()
-            if target then
-                config.target.manualkey = true
-                settarget(target)
-            end
+            local t = getNearestRage()
+            if t then cfg.target.manualkey = true setTarget(t) end
         end
     end
 
-    RagebotSection:Toggle({
+    RagebotSec:Toggle({
         Name     = "enable",
-        Flag     = "TargetOn",
+        Flag     = "RagebotToggle",
         Default  = false,
         Callback = function(val)
-            config.target.rageMasterOn = val
-            if config.target.auto then return end
+            cfg.target.rageMasterOn = val
+            if cfg.target.auto then return end
             if val then
-                local target = nearest_rb()
-                if target then
-                    config.target.manualkey = true
-                    settarget(target)
-                end
+                local t = getNearestRage()
+                if t then cfg.target.manualkey = true setTarget(t) end
             else
-                cleartarget()
+                clearTarget()
             end
         end,
     }):Keybind({
-        Flag     = "TargetKey",
+        Flag     = "RagebotKey",
         Default  = Enum.KeyCode.Unknown,
         Mode     = "Toggle",
-        Callback = function() togglekey_rb() end,
+        Callback = function() toggleRageKey() end,
     })
 
-    RagebotSection:Toggle({
+    RagebotSec:Toggle({
         Name     = "auto target",
         Flag     = "AutoTarget",
         Default  = false,
-        Callback = function(val) config.target.auto = val end,
+        Callback = function(val) cfg.target.auto = val end,
     })
 
-    RagebotSection:Dropdown({
+    RagebotSec:Dropdown({
         Name     = "weapon",
-        Flag     = "RageWeaponPick",
+        Flag     = "RageWeapon",
         Default  = "primary",
         Items    = { "primary", "secondary", "melee" },
         Callback = function(val)
-            config.target.weaponPick = val
-            if config.state.csyncactive then refreshAtk() end
-            eqSlot()
+            cfg.target.weaponPick = val
+            if cfg.state.csyncactive then refreshOrbit() end
+            equipSlot()
         end,
     })
 
-    RagebotSection:Dropdown({
+    RagebotSec:Dropdown({
         Name     = "hit part",
-        Flag     = "TargetPart",
+        Flag     = "RageHitPart",
         Default  = "Head",
         Items    = { "Head","HumanoidRootPart","Torso","UpperTorso","Closest","Random" },
-        Callback = function(val) config.target.hitpart = val end,
+        Callback = function(val) cfg.target.hitpart = val end,
     })
 
-    RagebotSection:Dropdown({
+    RagebotSec:Dropdown({
         Name     = "attack position",
-        Flag     = "AutoTargetAttackPos",
+        Flag     = "RageAttackPos",
         Default  = "default",
         Items    = { "default", "under" },
         Callback = function(val)
-            config.target.attackPosition = val
-            if config.state.csyncactive then refreshAtk() end
+            cfg.target.attackPosition = val
+            if cfg.state.csyncactive then refreshOrbit() end
         end,
     })
 
-    RagebotSection:Slider({
+    RagebotSec:Slider({
         Name     = "shoot attempts",
-        Flag     = "ShootAttempts",
-        Min      = 1,
-        Max      = 3,
-        Default  = 1,
-        Decimals = 0,
+        Flag     = "RageShootAttempts",
+        Min      = 1, Max = 3, Default = 1, Decimals = 0,
         Suffix   = "x",
         Callback = function(val)
-            config.target.shootAttempts = math.clamp(math.floor(val), 1, 3)
+            cfg.target.shootAttempts = math.clamp(math.floor(val), 1, 3)
         end,
     })
 
-    RagebotSection:Toggle({
+    RagebotSec:Toggle({
         Name     = "prediction",
-        Flag     = "PredictT",
+        Flag     = "RagePrediction",
         Default  = false,
-        Callback = function(val) config.prediction.enabled = val end,
+        Callback = function(val) cfg.prediction.enabled = val end,
     })
 
-    RagebotSection:Slider({
+    RagebotSec:Slider({
         Name     = "prediction mult",
-        Flag     = "PredictMul",
-        Min      = 0.1,
-        Max      = 3.0,
-        Default  = 1.2,
-        Decimals = 1,
-        Callback = function(val) config.prediction.multiplier = val end,
+        Flag     = "RagePredMult",
+        Min      = 0.1, Max = 3.0, Default = 1.2, Decimals = 1,
+        Callback = function(val) cfg.prediction.multiplier = val end,
     })
 
-    RagebotSection:Toggle({
+    RagebotSec:Toggle({
         Name     = "voidspam",
         Flag     = "VoidSpam",
         Default  = false,
         Callback = function(val)
-            config.voidspam.enabled = val
+            cfg.voidspam.enabled = val
             if val then
-                config.voidspam.phase           = "shoot"
-                config.voidspam.lastswitch      = tick()
-                config.voidspam.currentduration = randVs(
-                    config.voidspam.shoot_min,
-                    config.voidspam.shoot_max
-                )
+                cfg.voidspam.phase           = "shoot"
+                cfg.voidspam.lastswitch      = tick()
+                cfg.voidspam.currentduration = randVs(cfg.voidspam.shoot_min, cfg.voidspam.shoot_max)
             else
-                config.voidspam.phase = nil
-                clrVoidSnap()
+                cfg.voidspam.phase = nil
+                clrSnap()
             end
         end,
     })
 
-    -- ── Rage Visual UI ─────────────────────────
+    RagebotSec:Slider({
+        Name     = "attack time",
+        Flag     = "VoidShootTime",
+        Min      = 0.1, Max = 2, Default = 1, Decimals = 1,
+        Suffix   = "s",
+        Callback = function(val)
+            cfg.voidspam.shoot_min = val
+            cfg.voidspam.shoot_max = val
+        end,
+    })
+
+    RagebotSec:Slider({
+        Name     = "hide time",
+        Flag     = "VoidHideTime",
+        Min      = 0.1, Max = 2, Default = 1, Decimals = 1,
+        Suffix   = "s",
+        Callback = function(val)
+            cfg.voidspam.hide_min = val
+            cfg.voidspam.hide_max = val
+        end,
+    })
+
+    -- ── Rage Visuals UI ────────────────────────────────────────
 
     RageVisSec:Toggle({
         Name     = "rage status",
         Flag     = "RageStatus",
         Default  = false,
-        Callback = function(val) config.ragestatus.enabled = val end,
+        Callback = function(val) cfg.ragestatus.enabled = val end,
     }):Colorpicker({
         Flag     = "RageStatusColor",
         Default  = Color3.fromRGB(235, 235, 235),
-        Callback = function(val) config.ragestatus.color = val end,
+        Callback = function(c) cfg.ragestatus.color = c end,
     })
 
     RageVisSec:Toggle({
         Name     = "hit notifications",
-        Flag     = "HitNotifications",
+        Flag     = "HitNotif",
         Default  = true,
-        Callback = function(val) config.hitNotifications.enabled = val end,
+        Callback = function(val) cfg.hitNotif.enabled = val end,
     }):Colorpicker({
-        Flag     = "HitNotificationsColor",
+        Flag     = "HitNotifColor",
         Default  = Color3.fromRGB(235, 235, 235),
-        Callback = function(val) config.hitNotifications.color = val end,
+        Callback = function(c) cfg.hitNotif.color = c end,
     })
 
     RageVisSec:Slider({
         Name     = "notif duration",
         Flag     = "HitNotifDuration",
-        Min      = 1,
-        Max      = 8,
-        Default  = 3,
-        Decimals = 1,
+        Min      = 1, Max = 8, Default = 3, Decimals = 1,
         Suffix   = "s",
-        Callback = function(val) config.hitNotifications.duration = val end,
+        Callback = function(val) cfg.hitNotif.duration = val end,
     })
 
     RageVisSec:Dropdown({
         Name     = "notif position",
-        Flag     = "HitNotifPosition",
+        Flag     = "HitNotifPos",
         Default  = "Top Left",
         Items    = {
             "Top Left","Top Center","Top Right",
             "Center Left","Center","Center Right",
             "Bottom Left","Bottom Center","Bottom Right",
         },
-        Callback = function(val) config.hitNotifications.position = val end,
+        Callback = function(val) cfg.hitNotif.position = val end,
     })
 
     RageVisSec:Dropdown({
         Name     = "in animation",
         Flag     = "HitNotifInAnim",
         Default  = "fade bounce",
-        Items    = {
-            "fade","slide left","slide right",
-            "slide down","bounce","fade bounce","scale",
-        },
-        Callback = function(val) config.hitNotifications.inAnimation = val end,
+        Items    = { "fade","slide left","slide right","slide down","bounce","fade bounce","scale" },
+        Callback = function(val) cfg.hitNotif.inAnimation = val end,
     })
 
     RageVisSec:Dropdown({
         Name     = "out animation",
         Flag     = "HitNotifOutAnim",
         Default  = "fade",
-        Items    = {
-            "fade","slide left","slide right",
-            "slide down","bounce","fade bounce","scale",
-        },
-        Callback = function(val) config.hitNotifications.outAnimation = val end,
+        Items    = { "fade","slide left","slide right","slide down","bounce","fade bounce","scale" },
+        Callback = function(val) cfg.hitNotif.outAnimation = val end,
     })
 end
 
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
---                ESP SYSTEM
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
+--
+--                       ESP SYSTEM
+--
+-- ══════════════════════════════════════════════════════════════
 
 do
     local guiinset = GuiService:GetGuiInset()
 
-    local function worldToEspScreen(pos, cam)
+    -- Helpers
+    local function w2esp(pos, cam)
         cam = cam or Workspace.CurrentCamera
         local sp, vis = cam:WorldToViewportPoint(pos)
         return Vector3.new(sp.X, sp.Y, sp.Z), vis
     end
 
-    local function espScreenAnchor(xp, yp)
+    local function screenAnchor(xp, yp)
         local vp = Workspace.CurrentCamera.ViewportSize
         return Vector2.new(vp.X * xp, vp.Y * yp)
     end
 
+    local function lerpc(a, b, t)
+        return Color3.new(
+            a.R+(b.R-a.R)*t,
+            a.G+(b.G-a.G)*t,
+            a.B+(b.B-a.B)*t
+        )
+    end
+
+    -- Config
     _G.Config = _G.Config or {}
     local GC  = _G.Config
 
@@ -1640,16 +1513,16 @@ do
         Enable        = false,
         OutlineColor  = Color3.fromRGB(255, 255, 255),
         OutlineColor2 = Color3.fromRGB(255, 255, 255),
-        Healthbar     = { Enable = false, Thickness = 4 },
+        Healthbar     = { Enable=false, Thickness=4 },
         HealthLerpColors = {
-            Color1 = Color3.fromRGB(0, 255, 0),
-            Color2 = Color3.fromRGB(255, 255, 0),
-            Color3 = Color3.fromRGB(255, 0, 0),
+            Color1 = Color3.fromRGB(0,   255, 0  ),
+            Color2 = Color3.fromRGB(255, 255, 0  ),
+            Color3 = Color3.fromRGB(255, 0,   0  ),
         },
     }
-    GC.Filled  = GC.Filled  or { Enable=false, Transparency=0.7, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0, Animated=false, Speed=1 }
-    GC.Glow    = GC.Glow    or { Enable=false, Transparency=0.5, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0 }
-    GC.TextESP = GC.TextESP or { Names=false, Distance=false, Tools=false, NameSize=8, DistanceSize=8, ToolsSize=8, NameColor=Color3.fromRGB(255,255,255), NameColor2=Color3.fromRGB(255,255,255), DistanceColor=Color3.fromRGB(255,255,255), DistanceColor2=Color3.fromRGB(255,255,255), ToolColor=Color3.fromRGB(255,255,255), ToolColor2=Color3.fromRGB(255,255,255) }
+    GC.Filled   = GC.Filled   or { Enable=false, Transparency=0.7, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255), Rotation=0, Animated=false, Speed=1 }
+    GC.Glow     = GC.Glow     or { Enable=false, Transparency=0.5, ColorStart=Color3.fromRGB(255,255,255), ColorEnd=Color3.fromRGB(255,255,255) }
+    GC.TextESP  = GC.TextESP  or { Names=false, Distance=false, Tools=false, NameSize=8, DistanceSize=8, ToolsSize=8, NameColor=Color3.fromRGB(255,255,255), NameColor2=Color3.fromRGB(255,255,255), DistanceColor=Color3.fromRGB(255,255,255), DistanceColor2=Color3.fromRGB(255,255,255), ToolColor=Color3.fromRGB(255,255,255), ToolColor2=Color3.fromRGB(255,255,255) }
     GC.Skeleton = GC.Skeleton or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Thickness=1 }
     GC.Tracers  = GC.Tracers  or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Thickness=1, FromBottom=true }
     GC.Chams    = GC.Chams    or { Enable=false, Color=Color3.fromRGB(255,255,255), Color2=Color3.fromRGB(255,255,255), Transparency=0 }
@@ -1657,111 +1530,100 @@ do
 
     _G.ESPObjects = _G.ESPObjects or {}
 
-    local espgui = Instance.new("ScreenGui")
-    espgui.Name            = "ESP"
-    espgui.DisplayOrder    = 9e9
-    espgui.ResetOnSpawn    = false
-    espgui.IgnoreGuiInset  = true
-    espgui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
-    espgui.Parent          = game.CoreGui
+    -- Screen GUI
+    local espGui = Instance.new("ScreenGui")
+    espGui.Name            = "ESP"
+    espGui.DisplayOrder    = 9e9
+    espGui.ResetOnSpawn    = false
+    espGui.IgnoreGuiInset  = true
+    espGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+    espGui.Parent          = game.CoreGui
 
-    local r15bones = {
-        {"UpperTorso","Head"},{"UpperTorso","LowerTorso"},
+    -- Bones
+    local R15_BONES = {
+        {"UpperTorso","Head"},
+        {"UpperTorso","LowerTorso"},
         {"UpperTorso","LeftUpperArm"},{"LeftUpperArm","LeftLowerArm"},{"LeftLowerArm","LeftHand"},
         {"UpperTorso","RightUpperArm"},{"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
         {"LowerTorso","LeftUpperLeg"},{"LeftUpperLeg","LeftLowerLeg"},{"LeftLowerLeg","LeftFoot"},
         {"LowerTorso","RightUpperLeg"},{"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
     }
-    local r6bones = {
-        {"Torso","Head"},{"Torso","Left Arm"},{"Torso","Right Arm"},
+    local R6_BONES = {
+        {"Torso","Head"},
+        {"Torso","Left Arm"},{"Torso","Right Arm"},
         {"Torso","Left Leg"},{"Torso","Right Leg"},
     }
 
-    local function lerpcolor(a, b, t)
-        return Color3.new(
-            a.R + (b.R - a.R) * t,
-            a.G + (b.G - a.G) * t,
-            a.B + (b.B - a.B) * t
-        )
-    end
+    -- Font
+    local espFont = Font.fromEnum(Enum.Font.Code)
+    pcall(function() espFont = Font.fromEnum(Enum.Font.Code) end)
 
-    local function hpcolor(pct)
+    -- HP color
+    local function hpColor(pct)
         local hc = GC.Box.HealthLerpColors
-        if pct > 0.5 then
-            return lerpcolor(hc.Color2, hc.Color1, (pct - 0.5) * 2)
-        else
-            return lerpcolor(hc.Color3, hc.Color2, pct * 2)
-        end
+        if pct > 0.5 then return lerpc(hc.Color2, hc.Color1, (pct-0.5)*2) end
+        return lerpc(hc.Color3, hc.Color2, pct*2)
     end
 
-    local function checkteammate(p)
+    local function isTeammate(p)
         if not p or p == LocalPlayer then return true end
-        local myTeam    = LocalPlayer:GetAttribute("TeamID")
-        local theirTeam = p:GetAttribute("TeamID")
-        if myTeam ~= nil and theirTeam ~= nil then return myTeam == theirTeam end
+        local a = LocalPlayer:GetAttribute("TeamID")
+        local b = p:GetAttribute("TeamID")
+        if a ~= nil and b ~= nil then return a == b end
         return LocalPlayer.Team and p.Team and LocalPlayer.Team == p.Team
     end
 
-    local function espknock(p)
+    local function isKnockedDown(p)
         local char = p.Character
         if not char then return false end
         local be = char:FindFirstChild("BodyEffects")
-        if be then
-            local ko = be:FindFirstChild("K.O") or be:FindFirstChild("KO")
-            return ko and ko.Value
-        end
-        return false
+        if not be then return false end
+        local ko = be:FindFirstChild("K.O") or be:FindFirstChild("KO")
+        return ko and ko.Value
     end
 
-    local function dist2esp(p)
-        local char   = p.Character
-        local myChar = LocalPlayer.Character
-        if char and myChar then
-            local root   = char:FindFirstChild("HumanoidRootPart")
-            local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-            if root and myRoot then
-                return (root.Position - myRoot.Position).Magnitude
-            end
-        end
+    local function distTo(p)
+        local c  = p.Character
+        local mc = LocalPlayer.Character
+        if not c or not mc then return math.huge end
+        local r  = c:FindFirstChild("HumanoidRootPart")
+        local mr = mc:FindFirstChild("HumanoidRootPart")
+        if r and mr then return (r.Position - mr.Position).Magnitude end
         return math.huge
     end
 
-    local function ensureTextGradient(label, c1, c2)
-        if not label then return end
-        local grad = label:FindFirstChild("EspTextGradient")
-        if not grad then
-            grad      = Instance.new("UIGradient")
-            grad.Name = "EspTextGradient"
-            grad.Parent = label
+    local function ensureGrad(lbl, c1, c2)
+        if not lbl then return end
+        local g = lbl:FindFirstChild("EspGrad")
+        if not g then
+            g      = Instance.new("UIGradient")
+            g.Name = "EspGrad"
+            g.Parent = lbl
         end
-        grad.Color = ColorSequence.new({
+        g.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, c1),
             ColorSequenceKeypoint.new(1, c2),
         })
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
 
-    local fonts = {}
-    pcall(function() fonts.main = Font.fromEnum(Enum.Font.Code) end)
-    if not fonts.main then fonts.main = Font.fromEnum(Enum.Font.Code) end
-
-    local function makelabel(parent)
-        local lbl = Instance.new("TextLabel")
-        lbl.Parent                 = parent
-        lbl.Size                   = UDim2.new(0, 200, 0, 20)
-        lbl.BackgroundTransparency = 1
-        lbl.TextColor3             = Color3.fromRGB(255, 255, 255)
-        lbl.TextStrokeTransparency = 0
-        lbl.TextScaled             = false
-        lbl.TextSize               = 8
-        lbl.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-        lbl.FontFace               = fonts.main
-        lbl.TextXAlignment         = Enum.TextXAlignment.Left
-        lbl.TextYAlignment         = Enum.TextYAlignment.Top
-        return lbl
+    local function mkLabel(parent)
+        local l = Instance.new("TextLabel")
+        l.Parent                 = parent
+        l.Size                   = UDim2.new(0, 200, 0, 20)
+        l.BackgroundTransparency = 1
+        l.TextColor3             = Color3.fromRGB(255, 255, 255)
+        l.TextStrokeTransparency = 0
+        l.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
+        l.TextScaled             = false
+        l.TextSize               = 8
+        l.FontFace               = espFont
+        l.TextXAlignment         = Enum.TextXAlignment.Left
+        l.TextYAlignment         = Enum.TextYAlignment.Top
+        return l
     end
 
-    local function CreateCham(char)
+    local function mkCham(char)
         local hl = Instance.new("Highlight")
         hl.Name                = "ESPHighlight"
         hl.Adornee             = char
@@ -1774,139 +1636,346 @@ do
         return hl
     end
 
-    local function CreateBox(p)
+    -- Create ESP object
+    local function createESP(p)
         if _G.ESPObjects[p] then return end
-        local box = {}
+        local obj = {}
 
-        box.box = {
+        -- Box drawings
+        obj.box = {
             square  = Drawing.new("Square"),
             inline  = Drawing.new("Square"),
             outline = Drawing.new("Square"),
         }
 
-        box.filled = Instance.new("Frame")
-        box.filled.BackgroundColor3       = Color3.new(1, 1, 1)
-        box.filled.BackgroundTransparency = GC.Filled.Transparency
-        box.filled.BorderSizePixel        = 0
-        box.filled.Visible                = false
-        box.filled.ZIndex                 = 2
-        box.filled.Parent                 = espgui
+        -- Fill
+        obj.filled = Instance.new("Frame")
+        obj.filled.BackgroundColor3       = Color3.new(1,1,1)
+        obj.filled.BackgroundTransparency = GC.Filled.Transparency
+        obj.filled.BorderSizePixel        = 0
+        obj.filled.Visible                = false
+        obj.filled.ZIndex                 = 2
+        obj.filled.Parent                 = espGui
 
-        box.filled_gradient = Instance.new("UIGradient")
-        box.filled_gradient.Color = ColorSequence.new({
+        obj.filledGrad = Instance.new("UIGradient")
+        obj.filledGrad.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, GC.Filled.ColorStart),
             ColorSequenceKeypoint.new(1, GC.Filled.ColorEnd),
         })
-        box.filled_gradient.Parent = box.filled
+        obj.filledGrad.Parent = obj.filled
 
-        box.glow = Instance.new("ImageLabel")
-        box.glow.Image                 = "rbxassetid://110204605000367"
-        box.glow.ScaleType             = Enum.ScaleType.Slice
-        box.glow.SliceCenter           = Rect.new(Vector2.new(21, 21), Vector2.new(79, 79))
-        box.glow.ImageTransparency     = GC.Glow.Transparency
-        box.glow.BackgroundTransparency = 1
-        box.glow.BorderSizePixel       = 0
-        box.glow.ZIndex                = 1
-        box.glow.Visible               = false
-        box.glow.Parent                = espgui
+        -- Glow
+        obj.glow = Instance.new("ImageLabel")
+        obj.glow.Image                 = "rbxassetid://110204605000367"
+        obj.glow.ScaleType             = Enum.ScaleType.Slice
+        obj.glow.SliceCenter           = Rect.new(Vector2.new(21,21), Vector2.new(79,79))
+        obj.glow.ImageTransparency     = GC.Glow.Transparency
+        obj.glow.BackgroundTransparency = 1
+        obj.glow.BorderSizePixel       = 0
+        obj.glow.ZIndex                = 1
+        obj.glow.Visible               = false
+        obj.glow.Parent                = espGui
 
-        box.glow_gradient = Instance.new("UIGradient")
-        box.glow_gradient.Color = ColorSequence.new({
+        obj.glowGrad = Instance.new("UIGradient")
+        obj.glowGrad.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, GC.Glow.ColorStart),
             ColorSequenceKeypoint.new(1, GC.Glow.ColorEnd),
         })
-        box.glow_gradient.Parent = box.glow
+        obj.glowGrad.Parent = obj.glow
 
-        local glowpad = Instance.new("UIPadding")
-        glowpad.PaddingTop    = UDim.new(0, 21)
-        glowpad.PaddingBottom = UDim.new(0, 20)
-        glowpad.PaddingLeft   = UDim.new(0, 21)
-        glowpad.PaddingRight  = UDim.new(0, 20)
-        glowpad.Parent        = box.glow
+        local glowPad = Instance.new("UIPadding")
+        glowPad.PaddingTop    = UDim.new(0,21)
+        glowPad.PaddingBottom = UDim.new(0,20)
+        glowPad.PaddingLeft   = UDim.new(0,21)
+        glowPad.PaddingRight  = UDim.new(0,20)
+        glowPad.Parent        = obj.glow
 
-        box.bars = {
-            hp_bars    = {},
-            hp_outline = Drawing.new("Square"),
-            last_hp    = 1,
-        }
-        for i = 1, 50 do
-            box.bars.hp_bars[i] = Drawing.new("Line")
-        end
+        -- HP bars
+        obj.bars = { hp={}, outline=Drawing.new("Square"), lastHp=1 }
+        for i = 1, 50 do obj.bars.hp[i] = Drawing.new("Line") end
 
-        box.skeleton = { lines = {}, outlines = {} }
+        -- Skeleton
+        obj.skel = { lines={}, outlines={} }
         for i = 1, 15 do
             local ol = Drawing.new("Line")
-            ol.Color     = Color3.new(0, 0, 0)
-            ol.Thickness = 3
-            ol.Visible   = false
-            box.skeleton.outlines[i] = ol
+            ol.Color=Color3.new(0,0,0) ol.Thickness=3 ol.Visible=false
+            obj.skel.outlines[i] = ol
             local ln = Drawing.new("Line")
-            ln.Color     = Color3.new(1, 1, 1)
-            ln.Thickness = 1
-            ln.Visible   = false
-            box.skeleton.lines[i] = ln
+            ln.Color=Color3.new(1,1,1) ln.Thickness=1 ln.Visible=false
+            obj.skel.lines[i] = ln
         end
 
+        -- Text labels
         local sg = Instance.new("ScreenGui", game.CoreGui)
         local ng = Instance.new("ScreenGui", game.CoreGui)
         local tg = Instance.new("ScreenGui", game.CoreGui)
+        obj.text = { studs=mkLabel(sg), name=mkLabel(ng), tool=mkLabel(tg) }
 
-        box.text = {
-            studs = makelabel(sg),
-            tool  = makelabel(tg),
-            name  = makelabel(ng),
-        }
+        -- Tracer
+        obj.tracer          = Drawing.new("Line")
+        obj.tracer.Visible  = false
+        obj.tracer.Color    = GC.Tracers.Color
+        obj.tracer.Thickness = GC.Tracers.Thickness
 
-        box.Tracer          = Drawing.new("Line")
-        box.Tracer.Visible  = false
-        box.Tracer.Color    = GC.Tracers.Color
-        box.Tracer.Thickness = GC.Tracers.Thickness
-
-        _G.ESPObjects[p] = box
+        _G.ESPObjects[p] = obj
     end
 
-    local function RemoveBox(p)
-        local box = _G.ESPObjects[p]
-        if not box then return end
-        box.box.square:Remove()
-        box.box.outline:Remove()
-        box.box.inline:Remove()
-        if box.filled then box.filled:Destroy() end
-        if box.glow   then box.glow:Destroy()   end
-        if box.text then
-            if box.text.studs then box.text.studs.Parent:Destroy() end
-            if box.text.tool  then box.text.tool.Parent:Destroy()  end
-            if box.text.name  then box.text.name.Parent:Destroy()  end
+    local function removeESP(p)
+        local obj = _G.ESPObjects[p]
+        if not obj then return end
+        obj.box.square:Remove()
+        obj.box.outline:Remove()
+        obj.box.inline:Remove()
+        if obj.filled then obj.filled:Destroy() end
+        if obj.glow   then obj.glow:Destroy()   end
+        if obj.text then
+            if obj.text.studs then obj.text.studs.Parent:Destroy() end
+            if obj.text.name  then obj.text.name.Parent:Destroy()  end
+            if obj.text.tool  then obj.text.tool.Parent:Destroy()  end
         end
-        box.bars.hp_outline:Remove()
-        for _, ln in pairs(box.bars.hp_bars)      do ln:Remove() end
-        for _, ln in pairs(box.skeleton.lines)    do ln:Remove() end
-        for _, ln in pairs(box.skeleton.outlines) do ln:Remove() end
-        if box.Tracer then box.Tracer:Remove() end
-        if box.Cham   then box.Cham:Destroy()  end
+        obj.bars.outline:Remove()
+        for _, l in pairs(obj.bars.hp)       do l:Remove() end
+        for _, l in pairs(obj.skel.lines)    do l:Remove() end
+        for _, l in pairs(obj.skel.outlines) do l:Remove() end
+        if obj.tracer then obj.tracer:Remove() end
+        if obj.cham   then obj.cham:Destroy()  end
         _G.ESPObjects[p] = nil
     end
 
-    local function hideesp(p)
-        local box = _G.ESPObjects[p]
-        if not box then return end
-        box.box.square.Visible  = false
-        box.box.outline.Visible = false
-        box.box.inline.Visible  = false
-        if box.filled then box.filled.Visible = false end
-        if box.glow   then box.glow.Visible   = false end
-        box.text.studs.Visible      = false
-        box.text.tool.Visible       = false
-        box.text.name.Visible       = false
-        box.bars.hp_outline.Visible = false
-        for _, ln in pairs(box.bars.hp_bars)      do ln.Visible = false end
-        for _, ln in pairs(box.skeleton.lines)    do ln.Visible = false end
-        for _, ln in pairs(box.skeleton.outlines) do ln.Visible = false end
-        if box.Tracer then box.Tracer.Visible = false end
-        if box.Cham   then box.Cham.Enabled   = false end
+    local function hideESP(p)
+        local obj = _G.ESPObjects[p]
+        if not obj then return end
+        obj.box.square.Visible  = false
+        obj.box.outline.Visible = false
+        obj.box.inline.Visible  = false
+        if obj.filled then obj.filled.Visible = false end
+        if obj.glow   then obj.glow.Visible   = false end
+        obj.text.studs.Visible   = false
+        obj.text.name.Visible    = false
+        obj.text.tool.Visible    = false
+        obj.bars.outline.Visible = false
+        for _, l in pairs(obj.bars.hp)       do l.Visible = false end
+        for _, l in pairs(obj.skel.lines)    do l.Visible = false end
+        for _, l in pairs(obj.skel.outlines) do l.Visible = false end
+        if obj.tracer then obj.tracer.Visible = false end
+        if obj.cham   then obj.cham.Enabled   = false end
     end
 
-    local tickval_esp = 0
+    -- Draw functions
+    local function drawBox(obj, sz, pos)
+        local cfg = GC.Box
+        if not (cfg.MasterEnabled and cfg.Enable) then
+            obj.box.square.Visible  = false
+            obj.box.outline.Visible = false
+            obj.box.inline.Visible  = false
+            return
+        end
+        local w = math.max(math.floor(sz.X), 4)
+        local h = math.max(math.floor(sz.Y), 8)
+        sz  = Vector2.new(w, h)
+        pos = Vector2.new(math.floor(pos.X), math.floor(pos.Y))
+        local c2 = cfg.OutlineColor2 or cfg.OutlineColor
+
+        obj.box.square.Visible   = true
+        obj.box.square.Position  = pos
+        obj.box.square.Size      = sz
+        obj.box.square.Color     = lerpc(cfg.OutlineColor, c2, 0.5)
+        obj.box.square.Thickness = 1
+        obj.box.square.Filled    = false
+
+        obj.box.outline.Visible   = true
+        obj.box.outline.Position  = pos - Vector2.new(1,1)
+        obj.box.outline.Size      = sz + Vector2.new(2,2)
+        obj.box.outline.Color     = Color3.new(0,0,0)
+        obj.box.outline.Thickness = 1
+        obj.box.outline.Filled    = false
+
+        obj.box.inline.Visible   = true
+        obj.box.inline.Position  = pos + Vector2.new(1,1)
+        obj.box.inline.Size      = Vector2.new(math.max(w-2,2), math.max(h-2,4))
+        obj.box.inline.Color     = Color3.new(0,0,0)
+        obj.box.inline.Thickness = 1
+        obj.box.inline.Filled    = false
+    end
+
+    local espClock = 0
+    local function drawFill(obj, sz, pos)
+        local cfg = GC.Filled
+        if not cfg.Enable then obj.filled.Visible = false return end
+        obj.filled.Visible              = true
+        obj.filled.BackgroundTransparency = cfg.Transparency
+        obj.filled.Position             = UDim2.fromOffset(pos.X, pos.Y)
+        obj.filled.Size                 = UDim2.fromOffset(sz.X, sz.Y)
+        obj.filledGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, cfg.ColorStart),
+            ColorSequenceKeypoint.new(1, cfg.ColorEnd),
+        })
+        obj.filledGrad.Rotation = cfg.Animated
+            and (math.sin(espClock * cfg.Speed) * 90) + cfg.Rotation
+            or cfg.Rotation
+    end
+
+    local function drawGlow(obj, sz, pos)
+        local cfg = GC.Glow
+        if not cfg.Enable or not (GC.Box.MasterEnabled and GC.Box.Enable) then
+            obj.glow.Visible = false return
+        end
+        obj.glow.Visible           = true
+        obj.glow.ImageTransparency = cfg.Transparency
+        obj.glow.ImageColor3       = cfg.ColorStart
+        obj.glow.Position          = UDim2.fromOffset(pos.X-21, pos.Y-21)
+        obj.glow.Size              = UDim2.fromOffset(sz.X+42, sz.Y+42)
+        obj.glowGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, cfg.ColorStart),
+            ColorSequenceKeypoint.new(1, cfg.ColorEnd),
+        })
+    end
+
+    local function drawSkeleton(obj, char, hum)
+        local cfg = GC.Skeleton
+        if not cfg.Enable then
+            for _, l in pairs(obj.skel.lines)    do l.Visible=false end
+            for _, l in pairs(obj.skel.outlines) do l.Visible=false end
+            return
+        end
+        local bones = (hum.RigType == Enum.HumanoidRigType.R15) and R15_BONES or R6_BONES
+        local c1 = cfg.Color  or Color3.fromRGB(255,255,255)
+        local c2 = cfg.Color2 or c1
+        local th = cfg.Thickness or 1
+        for i = 1, 15 do
+            local set = bones[i]
+            local ln  = obj.skel.lines[i]
+            local ol  = obj.skel.outlines[i]
+            if set then
+                local pA = char:FindFirstChild(set[1])
+                local pB = char:FindFirstChild(set[2])
+                if pA and pB then
+                    local va, aOk = w2esp(pA.Position)
+                    local vb, bOk = w2esp(pB.Position)
+                    if aOk and bOk then
+                        local p2 = Vector2.new(va.X, va.Y)
+                        local ep = Vector2.new(vb.X, vb.Y)
+                        ol.Visible=true ol.From=p2 ol.To=ep ol.Thickness=th+2 ol.Color=Color3.new(0,0,0)
+                        ln.Visible=true ln.From=p2 ln.To=ep ln.Color=lerpc(c1,c2,0.5) ln.Thickness=th
+                    else
+                        ln.Visible=false ol.Visible=false
+                    end
+                else
+                    ln.Visible=false ol.Visible=false
+                end
+            else
+                ln.Visible=false ol.Visible=false
+            end
+        end
+    end
+
+    local function drawHealthBar(obj, hum, sz, pos, dt)
+        local cfg = GC.Box.Healthbar
+        if not (cfg and cfg.Enable) then
+            obj.bars.outline.Visible = false
+            for _, l in pairs(obj.bars.hp) do l.Visible=false end
+            return
+        end
+        local target = math.clamp(hum.Health/hum.MaxHealth, 0, 1)
+        local last   = obj.bars.lastHp or target
+        local ls     = (GC.ESP and GC.ESP.HealthLerpSpeed) or 32
+        obj.bars.lastHp = last + (target - last) * math.min(1, dt * ls)
+        local lerped    = obj.bars.lastHp
+        local h         = math.ceil(sz.Y * lerped)
+        local hpx       = pos.X - 5
+        local hpyStart  = pos.Y + (sz.Y - h)
+
+        obj.bars.outline.Visible  = true
+        obj.bars.outline.Position = Vector2.new(hpx-1, pos.Y-1)
+        obj.bars.outline.Size     = Vector2.new(3, sz.Y+2)
+        obj.bars.outline.Color    = Color3.new(0,0,0)
+        obj.bars.outline.Filled   = false
+
+        local segs = math.clamp(math.floor(h/2), 10, 50)
+        for i = 1, 50 do
+            local ln = obj.bars.hp[i]
+            if i <= segs then
+                local segH  = h / segs
+                local yoff  = (i-1) * segH
+                local pct   = 1 - ((yoff+(sz.Y-h))/sz.Y)
+                ln.Visible  = true
+                ln.From     = Vector2.new(hpx, hpyStart+yoff)
+                ln.To       = Vector2.new(hpx+1, hpyStart+yoff)
+                ln.Color    = hpColor(pct)
+                ln.Thickness = math.max(segH, 1)
+            else
+                ln.Visible = false
+            end
+        end
+    end
+
+    local function drawText(p, obj, sz, pos, dist)
+        local basey = pos.Y - guiinset.Y
+        local cfg   = GC.TextESP
+
+        if cfg.Names then
+            obj.text.name.Visible = true
+            obj.text.name.Position = UDim2.new(0, pos.X+(sz.X/2)-100, 0, basey-15)
+            obj.text.name.Text = p.Name
+            obj.text.name.TextSize = cfg.NameSize or 8
+            ensureGrad(obj.text.name, cfg.NameColor, cfg.NameColor2 or cfg.NameColor)
+            obj.text.name.TextXAlignment = Enum.TextXAlignment.Center
+        else
+            obj.text.name.Visible = false
+        end
+
+        if cfg.Tools then
+            obj.text.tool.Visible = true
+            obj.text.tool.Position = UDim2.new(0, pos.X+sz.X+5, 0, basey)
+            obj.text.tool.Text = ""
+            obj.text.tool.TextSize = cfg.ToolsSize or 8
+            ensureGrad(obj.text.tool, cfg.ToolColor, cfg.ToolColor2 or cfg.ToolColor)
+            obj.text.tool.TextXAlignment = Enum.TextXAlignment.Left
+        else
+            obj.text.tool.Visible = false
+        end
+
+        if cfg.Distance then
+            obj.text.studs.Visible = true
+            obj.text.studs.Position = UDim2.new(0, pos.X+(sz.X/2)-100, 0, basey+sz.Y+2)
+            obj.text.studs.Text = string.format("%.0f studs", dist)
+            obj.text.studs.TextSize = cfg.DistanceSize or 8
+            ensureGrad(obj.text.studs, cfg.DistanceColor, cfg.DistanceColor2 or cfg.DistanceColor)
+            obj.text.studs.TextXAlignment = Enum.TextXAlignment.Center
+        else
+            obj.text.studs.Visible = false
+        end
+    end
+
+    local function drawTracer(obj, root)
+        local cfg = GC.Tracers
+        if not cfg.Enable then obj.tracer.Visible=false return end
+        local pos, vis = w2esp(root.Position)
+        if vis then
+            obj.tracer.Visible   = true
+            obj.tracer.To        = Vector2.new(pos.X, pos.Y)
+            obj.tracer.From      = cfg.FromBottom and screenAnchor(0.5,1) or screenAnchor(0.5,0.5)
+            obj.tracer.Color     = lerpc(cfg.Color or Color3.fromRGB(255,255,255), cfg.Color2 or Color3.fromRGB(255,255,255), 0.5)
+            obj.tracer.Thickness = cfg.Thickness or 1
+        else
+            obj.tracer.Visible = false
+        end
+    end
+
+    local function updateCham(obj, char)
+        if not GC.Chams.Enable then
+            if obj.cham then obj.cham.Enabled=false end
+            return
+        end
+        if not obj.cham or not obj.cham.Parent then
+            obj.cham = mkCham(char)
+        end
+        obj.cham.Enabled           = true
+        obj.cham.FillColor         = GC.Chams.Color
+        obj.cham.OutlineColor      = GC.Chams.Color2 or GC.Chams.Color
+        obj.cham.FillTransparency  = GC.Chams.Transparency
+        obj.cham.OutlineTransparency = math.clamp(GC.Chams.Transparency, 0, 1)
+    end
 
     local function getHitboxBounds(char)
         local cam = Workspace.CurrentCamera
@@ -1919,358 +1988,131 @@ do
                 local cf = part.CFrame
                 local sz = part.Size
                 local hx, hy, hz = sz.X/2, sz.Y/2, sz.Z/2
-                local corners = {
+                for _, corner in ipairs({
                     cf*Vector3.new(-hx,-hy,-hz), cf*Vector3.new( hx,-hy,-hz),
                     cf*Vector3.new(-hx, hy,-hz), cf*Vector3.new( hx, hy,-hz),
                     cf*Vector3.new(-hx,-hy, hz), cf*Vector3.new( hx,-hy, hz),
                     cf*Vector3.new(-hx, hy, hz), cf*Vector3.new( hx, hy, hz),
-                }
-                for _, corner in ipairs(corners) do
-                    local sp, ok = worldToEspScreen(corner, cam)
+                }) do
+                    local sp, ok = w2esp(corner, cam)
                     if ok then
                         found = true
-                        minX  = math.min(minX, sp.X)
-                        minY  = math.min(minY, sp.Y)
-                        maxX  = math.max(maxX, sp.X)
-                        maxY  = math.max(maxY, sp.Y)
+                        minX  = math.min(minX, sp.X) minY = math.min(minY, sp.Y)
+                        maxX  = math.max(maxX, sp.X) maxY = math.max(maxY, sp.Y)
                     end
                 end
             end
         end
         if not found then return nil, nil end
-        return Vector2.new(math.max(maxX-minX,4), math.max(maxY-minY,8)),
-               Vector2.new(minX, minY)
+        return Vector2.new(math.max(maxX-minX,4), math.max(maxY-minY,8)), Vector2.new(minX, minY)
     end
 
-    local function drawbox_esp(p, box, size, position)
-        local cfg = GC.Box
-        if not (cfg.MasterEnabled and cfg.Enable) then
-            box.box.square.Visible  = false
-            box.box.outline.Visible = false
-            box.box.inline.Visible  = false
-            return
-        end
-        local w = math.max(math.floor(size.X), 4)
-        local h = math.max(math.floor(size.Y), 8)
-        size     = Vector2.new(w, h)
-        position = Vector2.new(math.floor(position.X), math.floor(position.Y))
-        local c2 = cfg.OutlineColor2 or cfg.OutlineColor
-        box.box.square.Visible   = true
-        box.box.square.Position  = position
-        box.box.square.Size      = size
-        box.box.square.Color     = lerpcolor(cfg.OutlineColor, c2, 0.5)
-        box.box.square.Thickness = 1
-        box.box.square.Filled    = false
-        box.box.outline.Visible   = true
-        box.box.outline.Position  = position - Vector2.new(1, 1)
-        box.box.outline.Size      = size + Vector2.new(2, 2)
-        box.box.outline.Color     = Color3.new(0, 0, 0)
-        box.box.outline.Thickness = 1
-        box.box.outline.Filled    = false
-        box.box.inline.Visible    = true
-        box.box.inline.Position   = position + Vector2.new(1, 1)
-        box.box.inline.Size       = Vector2.new(math.max(w-2,2), math.max(h-2,4))
-        box.box.inline.Color      = Color3.new(0, 0, 0)
-        box.box.inline.Thickness  = 1
-        box.box.inline.Filled     = false
-    end
-
-    local function drawfill_esp(p, box, size, position)
-        local cfg = GC.Filled
-        if not cfg.Enable then box.filled.Visible = false return end
-        box.filled.Visible              = true
-        box.filled.BackgroundTransparency = cfg.Transparency
-        box.filled.Position             = UDim2.fromOffset(position.X, position.Y)
-        box.filled.Size                 = UDim2.fromOffset(size.X, size.Y)
-        box.filled_gradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, cfg.ColorStart),
-            ColorSequenceKeypoint.new(1, cfg.ColorEnd),
-        })
-        if cfg.Animated then
-            box.filled_gradient.Rotation = (math.sin(tickval_esp * cfg.Speed) * 90) + cfg.Rotation
-        else
-            box.filled_gradient.Rotation = cfg.Rotation
-        end
-    end
-
-    local function drawglow_esp(p, box, size, position)
-        local cfg = GC.Glow
-        if not cfg.Enable or not (GC.Box.MasterEnabled and GC.Box.Enable) then
-            box.glow.Visible = false return
-        end
-        box.glow.Visible           = true
-        box.glow.ImageTransparency = cfg.Transparency
-        box.glow.ImageColor3       = cfg.ColorStart
-        box.glow.Position          = UDim2.fromOffset(position.X - 21, position.Y - 21)
-        box.glow.Size              = UDim2.fromOffset(size.X + 42, size.Y + 42)
-        box.glow_gradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, cfg.ColorStart),
-            ColorSequenceKeypoint.new(1, cfg.ColorEnd),
-        })
-    end
-
-    local function drawskeleton_esp(p, box, char, hum, size, position)
-        local cfg = GC.Skeleton
-        if not cfg.Enable then
-            for _, ln in pairs(box.skeleton.lines)    do ln.Visible = false end
-            for _, ol in pairs(box.skeleton.outlines) do ol.Visible = false end
-            return
-        end
-        local bones = (hum.RigType == Enum.HumanoidRigType.R15) and r15bones or r6bones
-        local c1 = cfg.Color  or Color3.fromRGB(255,255,255)
-        local c2 = cfg.Color2 or c1
-        local th = cfg.Thickness or 1
-        for i = 1, 15 do
-            local boneset = bones[i]
-            local ln = box.skeleton.lines[i]
-            local ol = box.skeleton.outlines[i]
-            if boneset then
-                local pA = char:FindFirstChild(boneset[1])
-                local pB = char:FindFirstChild(boneset[2])
-                if pA and pB then
-                    local va, aOk = worldToEspScreen(pA.Position)
-                    local vb, bOk = worldToEspScreen(pB.Position)
-                    if aOk and bOk then
-                        local p2 = Vector2.new(va.X, va.Y)
-                        local ep = Vector2.new(vb.X, vb.Y)
-                        ol.Visible   = true
-                        ol.From      = p2
-                        ol.To        = ep
-                        ol.Thickness = th + 2
-                        ol.Color     = Color3.new(0, 0, 0)
-                        ln.Visible   = true
-                        ln.From      = p2
-                        ln.To        = ep
-                        ln.Color     = lerpcolor(c1, c2, 0.5)
-                        ln.Thickness = th
-                    else
-                        ln.Visible = false
-                        ol.Visible = false
-                    end
-                else
-                    ln.Visible = false
-                    ol.Visible = false
-                end
-            else
-                ln.Visible = false
-                ol.Visible = false
-            end
-        end
-    end
-
-    local function drawhealthbar_esp(p, box, hum, size, position, dt)
-        local cfg = GC.Box.Healthbar
-        if not (cfg and cfg.Enable) then
-            box.bars.hp_outline.Visible = false
-            for _, ln in pairs(box.bars.hp_bars) do ln.Visible = false end
-            return
-        end
-        local target = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-        local last   = box.bars.last_hp or target
-        local ls     = (GC.ESP and GC.ESP.HealthLerpSpeed) or 32
-        box.bars.last_hp = last + (target - last) * math.min(1, dt * ls)
-        local lerped  = box.bars.last_hp
-        local h       = math.ceil(size.Y * lerped)
-        local hpx     = position.X - 5
-        local hpystart = position.Y + (size.Y - h)
-        box.bars.hp_outline.Visible  = true
-        box.bars.hp_outline.Position = Vector2.new(hpx - 1, position.Y - 1)
-        box.bars.hp_outline.Size     = Vector2.new(3, size.Y + 2)
-        box.bars.hp_outline.Color    = Color3.new(0, 0, 0)
-        box.bars.hp_outline.Filled   = false
-        local segments = math.clamp(math.floor(h/2), 10, 50)
-        for i = 1, 50 do
-            local ln = box.bars.hp_bars[i]
-            if i <= segments then
-                local segH   = h / segments
-                local yoff   = (i - 1) * segH
-                local pospct = 1 - ((yoff + (size.Y - h)) / size.Y)
-                ln.Visible   = true
-                ln.From      = Vector2.new(hpx, hpystart + yoff)
-                ln.To        = Vector2.new(hpx + 1, hpystart + yoff)
-                ln.Color     = hpcolor(pospct)
-                ln.Thickness = math.max(segH, 1)
-            else
-                ln.Visible = false
-            end
-        end
-    end
-
-    local function drawtext_esp(p, box, size, position, distance)
-        local basey = position.Y - guiinset.Y
-        local cfg   = GC.TextESP
-        if cfg.Names then
-            box.text.name.Visible = true
-            box.text.name.Position = UDim2.new(0, position.X + (size.X/2) - 100, 0, basey - 15)
-            box.text.name.Text = p.Name
-            box.text.name.TextSize = cfg.NameSize or 8
-            ensureTextGradient(box.text.name,
-                cfg.NameColor  or Color3.fromRGB(255,255,255),
-                cfg.NameColor2 or Color3.fromRGB(255,255,255))
-            box.text.name.TextXAlignment = Enum.TextXAlignment.Center
-        else
-            box.text.name.Visible = false
-        end
-        if cfg.Tools then
-            box.text.tool.Visible = true
-            box.text.tool.Position = UDim2.new(0, position.X + size.X + 5, 0, basey)
-            box.text.tool.Text = ""
-            box.text.tool.TextSize = cfg.ToolsSize or 8
-            ensureTextGradient(box.text.tool,
-                cfg.ToolColor  or Color3.fromRGB(255,255,255),
-                cfg.ToolColor2 or Color3.fromRGB(255,255,255))
-            box.text.tool.TextXAlignment = Enum.TextXAlignment.Left
-        else
-            box.text.tool.Visible = false
-        end
-        if cfg.Distance then
-            box.text.studs.Visible = true
-            box.text.studs.Position = UDim2.new(0, position.X + (size.X/2) - 100, 0, basey + size.Y + 2)
-            box.text.studs.Text = string.format("%.0f studs", distance)
-            box.text.studs.TextSize = cfg.DistanceSize or 8
-            ensureTextGradient(box.text.studs,
-                cfg.DistanceColor  or Color3.fromRGB(255,255,255),
-                cfg.DistanceColor2 or Color3.fromRGB(255,255,255))
-            box.text.studs.TextXAlignment = Enum.TextXAlignment.Center
-        else
-            box.text.studs.Visible = false
-        end
-    end
-
-    local function drawtracers_esp(p, box, root)
-        local cfg = GC.Tracers
-        if not cfg.Enable then box.Tracer.Visible = false return end
-        local pos, vis = worldToEspScreen(root.Position)
-        if vis then
-            box.Tracer.Visible   = true
-            box.Tracer.To        = Vector2.new(pos.X, pos.Y)
-            box.Tracer.From      = (cfg.FromBottom ~= false)
-                and espScreenAnchor(0.5, 1)
-                or  espScreenAnchor(0.5, 0.5)
-            box.Tracer.Color     = lerpcolor(
-                cfg.Color  or Color3.fromRGB(255,255,255),
-                cfg.Color2 or Color3.fromRGB(255,255,255), 0.5
-            )
-            box.Tracer.Thickness = cfg.Thickness or 1
-        else
-            box.Tracer.Visible = false
-        end
-    end
-
-    local function updatecham_esp(p, box, char)
-        if not GC.Chams.Enable then
-            if box.Cham then box.Cham.Enabled = false end
-            return
-        end
-        if not box.Cham or not box.Cham.Parent then
-            box.Cham = CreateCham(char)
-        end
-        box.Cham.Enabled           = true
-        box.Cham.FillColor         = GC.Chams.Color
-        box.Cham.OutlineColor      = GC.Chams.Color2 or GC.Chams.Color
-        box.Cham.FillTransparency  = GC.Chams.Transparency
-        box.Cham.OutlineTransparency = math.clamp(GC.Chams.Transparency, 0, 1)
-    end
-
-    local function updateesp(p, dt)
+    local function updateESP(p, dt)
         if not p or not _G.ESPObjects[p] then return end
-        if not GC.Box.MasterEnabled then hideesp(p) return end
-        if p == LocalPlayer or checkteammate(p) then hideesp(p) return end
+        if not GC.Box.MasterEnabled       then hideESP(p) return end
+        if p == LocalPlayer               then hideESP(p) return end
+        if isTeammate(p)                  then hideESP(p) return end
+
         local char = p.Character
-        if not char or espknock(p) then hideesp(p) return end
+        if not char or isKnockedDown(p) then hideESP(p) return end
+
         local root = char:FindFirstChild("HumanoidRootPart")
         local hum  = char:FindFirstChildWhichIsA("Humanoid")
-        if not root or not hum then hideesp(p) return end
-        local hrp2d, hrpOk = worldToEspScreen(root.Position)
-        if not hrpOk then hideesp(p) return end
-        local distance           = dist2esp(p)
-        local hitboxSize, hitboxPos = getHitboxBounds(char)
-        local size, position
-        if hitboxSize and hitboxPos then
-            size     = Vector2.new(math.max(math.floor(hitboxSize.X),4), math.max(math.floor(hitboxSize.Y),8))
-            position = Vector2.new(math.floor(hitboxPos.X), math.floor(hitboxPos.Y))
+        if not root or not hum then hideESP(p) return end
+
+        local hrp2d, hrpOk = w2esp(root.Position)
+        if not hrpOk then hideESP(p) return end
+
+        local dist         = distTo(p)
+        local hitSz, hitPos = getHitboxBounds(char)
+        local sz, pos
+
+        if hitSz and hitPos then
+            sz  = Vector2.new(math.max(math.floor(hitSz.X),4), math.max(math.floor(hitSz.Y),8))
+            pos = Vector2.new(math.floor(hitPos.X), math.floor(hitPos.Y))
         else
             local head        = char:FindFirstChild("Head")
-            local topWorld    = (head and head.Position + Vector3.new(0,0.5,0)) or (root.Position + Vector3.new(0,3,0))
-            local bottomWorld = root.Position - Vector3.new(0,3,0)
-            local top2d, tOk  = worldToEspScreen(topWorld)
-            local bot2d, bOk  = worldToEspScreen(bottomWorld)
-            if not tOk or not bOk then hideesp(p) return end
-            local bh  = math.abs(bot2d.Y - top2d.Y)
-            local bw  = math.max(bh * 0.55, 8)
-            size     = Vector2.new(math.max(math.floor(bw),4), math.max(math.floor(math.max(bh,10)),8))
-            position = Vector2.new(math.floor(hrp2d.X - size.X/2), math.floor(math.min(top2d.Y, bot2d.Y)))
+            local topW        = (head and head.Position + Vector3.new(0,0.5,0)) or (root.Position + Vector3.new(0,3,0))
+            local botW        = root.Position - Vector3.new(0,3,0)
+            local top2d, tOk  = w2esp(topW)
+            local bot2d, bOk  = w2esp(botW)
+            if not tOk or not bOk then hideESP(p) return end
+            local bh = math.abs(bot2d.Y - top2d.Y)
+            local bw = math.max(bh*0.55, 8)
+            sz  = Vector2.new(math.max(math.floor(bw),4), math.max(math.floor(math.max(bh,10)),8))
+            pos = Vector2.new(math.floor(hrp2d.X-sz.X/2), math.floor(math.min(top2d.Y,bot2d.Y)))
         end
-        local box = _G.ESPObjects[p]
-        drawfill_esp(p, box, size, position)
-        drawbox_esp(p, box, size, position)
-        drawglow_esp(p, box, size, position)
-        drawskeleton_esp(p, box, char, hum, size, position)
-        drawhealthbar_esp(p, box, hum, size, position, dt)
-        drawtext_esp(p, box, size, position, distance)
-        drawtracers_esp(p, box, root)
-        updatecham_esp(p, box, char)
+
+        local obj = _G.ESPObjects[p]
+        drawFill(obj, sz, pos)
+        drawBox(obj, sz, pos)
+        drawGlow(obj, sz, pos)
+        drawSkeleton(obj, char, hum)
+        drawHealthBar(obj, hum, sz, pos, dt)
+        drawText(p, obj, sz, pos, dist)
+        drawTracer(obj, root)
+        updateCham(obj, char)
     end
 
-    local _espMasterWasOn = false
-    local function stepEspUpdate(dt)
-        dt          = dt or (1/240)
-        tickval_esp = os.clock()
+    -- Render loop
+    local espMasterWasOn = false
+    local function stepESP(dt)
+        dt       = dt or (1/240)
+        espClock = os.clock()
         if not GC.Box.MasterEnabled then
-            if _espMasterWasOn then
-                _espMasterWasOn = false
-                for plr in pairs(_G.ESPObjects) do hideesp(plr) end
+            if espMasterWasOn then
+                espMasterWasOn = false
+                for plr in pairs(_G.ESPObjects) do hideESP(plr) end
             end
             return
         end
-        _espMasterWasOn = true
+        espMasterWasOn = true
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then updateesp(plr, dt) end
+            if plr ~= LocalPlayer then updateESP(plr, dt) end
         end
     end
 
-    local espOk = pcall(function()
+    local espBound = pcall(function()
         RunService:UnbindFromRenderStep("InstanceESPUpdate")
         RunService:BindToRenderStep("InstanceESPUpdate",
-            Enum.RenderPriority.Camera.Value + 1, stepEspUpdate)
+            Enum.RenderPriority.Camera.Value + 1, stepESP)
     end)
-    if not espOk then
-        RunService.RenderStepped:Connect(stepEspUpdate)
-    end
+    if not espBound then RunService.RenderStepped:Connect(stepESP) end
 
+    -- Init
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then CreateBox(p) end
+        if p ~= LocalPlayer then createESP(p) end
     end
     Players.PlayerAdded:Connect(function(p)
-        if p ~= LocalPlayer then CreateBox(p) end
+        if p ~= LocalPlayer then createESP(p) end
     end)
-    Players.PlayerRemoving:Connect(RemoveBox)
+    Players.PlayerRemoving:Connect(removeESP)
 
-    -- ── ESP UI ─────────────────────────────────
+    -- ── ESP UI ─────────────────────────────────────────────────
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "enable",
         Flag     = "ESPMaster",
         Default  = false,
         Callback = function(val) GC.Box.MasterEnabled = val end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "boxes",
         Flag     = "ESPBoxes",
         Default  = false,
         Callback = function(val) GC.Box.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPBoxColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Box.OutlineColor = val end,
+        Flag     = "ESPBoxC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Box.OutlineColor = c end,
     }):Colorpicker({
-        Flag     = "ESPBoxColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Box.OutlineColor2 = val end,
+        Flag     = "ESPBoxC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Box.OutlineColor2 = c end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "healthbar",
         Flag     = "ESPHealthbar",
         Default  = false,
@@ -2280,176 +2122,177 @@ do
         end,
     }):Colorpicker({
         Flag     = "ESPHPHigh",
-        Default  = Color3.fromRGB(0, 255, 0),
-        Callback = function(val)
+        Default  = Color3.fromRGB(0,255,0),
+        Callback = function(c)
             GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
-            GC.Box.HealthLerpColors.Color1 = val
+            GC.Box.HealthLerpColors.Color1 = c
         end,
     }):Colorpicker({
         Flag     = "ESPHPMid",
-        Default  = Color3.fromRGB(255, 255, 0),
-        Callback = function(val)
+        Default  = Color3.fromRGB(255,255,0),
+        Callback = function(c)
             GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
-            GC.Box.HealthLerpColors.Color2 = val
+            GC.Box.HealthLerpColors.Color2 = c
         end,
     }):Colorpicker({
         Flag     = "ESPHPLow",
-        Default  = Color3.fromRGB(255, 0, 0),
-        Callback = function(val)
+        Default  = Color3.fromRGB(255,0,0),
+        Callback = function(c)
             GC.Box.HealthLerpColors        = GC.Box.HealthLerpColors or {}
-            GC.Box.HealthLerpColors.Color3 = val
+            GC.Box.HealthLerpColors.Color3 = c
         end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "names",
         Flag     = "ESPNames",
         Default  = false,
         Callback = function(val) GC.TextESP.Names = val end,
     }):Colorpicker({
-        Flag     = "ESPNameColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.TextESP.NameColor = val end,
+        Flag     = "ESPNameC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.TextESP.NameColor = c end,
     }):Colorpicker({
-        Flag     = "ESPNameColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.TextESP.NameColor2 = val end,
+        Flag     = "ESPNameC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.TextESP.NameColor2 = c end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "distance",
         Flag     = "ESPDistance",
         Default  = false,
         Callback = function(val) GC.TextESP.Distance = val end,
     }):Colorpicker({
-        Flag     = "ESPDistColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.TextESP.DistanceColor = val end,
+        Flag     = "ESPDistC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.TextESP.DistanceColor = c end,
     }):Colorpicker({
-        Flag     = "ESPDistColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.TextESP.DistanceColor2 = val end,
+        Flag     = "ESPDistC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.TextESP.DistanceColor2 = c end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "skeleton",
         Flag     = "ESPSkeleton",
         Default  = false,
         Callback = function(val) GC.Skeleton.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPSkelColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Skeleton.Color = val end,
+        Flag     = "ESPSkelC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Skeleton.Color = c end,
     }):Colorpicker({
-        Flag     = "ESPSkelColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Skeleton.Color2 = val end,
+        Flag     = "ESPSkelC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Skeleton.Color2 = c end,
     })
 
-    ESPSection:Toggle({
+    EspSec:Toggle({
         Name     = "chams",
         Flag     = "ESPChams",
         Default  = false,
         Callback = function(val) GC.Chams.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPChamColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Chams.Color = val end,
+        Flag     = "ESPChamC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Chams.Color = c end,
     }):Colorpicker({
-        Flag     = "ESPChamColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Chams.Color2 = val end,
+        Flag     = "ESPChamC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Chams.Color2 = c end,
     })
 
-    ESPExtra:Toggle({
+    EspExtraSec:Toggle({
         Name     = "tracers",
         Flag     = "ESPTracers",
         Default  = false,
         Callback = function(val) GC.Tracers.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPTracerColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Tracers.Color = val end,
+        Flag     = "ESPTracerC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Tracers.Color = c end,
     }):Colorpicker({
-        Flag     = "ESPTracerColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Tracers.Color2 = val end,
+        Flag     = "ESPTracerC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Tracers.Color2 = c end,
     })
 
-    ESPExtra:Toggle({
+    EspExtraSec:Toggle({
         Name     = "box fill",
         Flag     = "ESPFill",
         Default  = false,
         Callback = function(val) GC.Filled.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPFillColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Filled.ColorStart = val end,
+        Flag     = "ESPFillC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Filled.ColorStart = c end,
     }):Colorpicker({
-        Flag     = "ESPFillColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Filled.ColorEnd = val end,
+        Flag     = "ESPFillC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Filled.ColorEnd = c end,
     })
 
-    ESPExtra:Toggle({
+    EspExtraSec:Toggle({
         Name     = "box glow",
         Flag     = "ESPGlow",
         Default  = false,
         Callback = function(val) GC.Glow.Enable = val end,
     }):Colorpicker({
-        Flag     = "ESPGlowColor1",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Glow.ColorStart = val end,
+        Flag     = "ESPGlowC1",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Glow.ColorStart = c end,
     }):Colorpicker({
-        Flag     = "ESPGlowColor2",
-        Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val) GC.Glow.ColorEnd = val end,
+        Flag     = "ESPGlowC2",
+        Default  = Color3.fromRGB(255,255,255),
+        Callback = function(c) GC.Glow.ColorEnd = c end,
     })
 
-    ESPExtra:Slider({
+    EspExtraSec:Slider({
         Name     = "fill transparency",
         Flag     = "ESPFillTrans",
-        Min      = 0, Max = 1, Default = 0.7, Decimals = 2,
+        Min=0, Max=1, Default=0.7, Decimals=2,
         Callback = function(val) GC.Filled.Transparency = val end,
     })
 
-    ESPExtra:Slider({
+    EspExtraSec:Slider({
         Name     = "glow transparency",
         Flag     = "ESPGlowTrans",
-        Min      = 0, Max = 1, Default = 0.5, Decimals = 2,
+        Min=0, Max=1, Default=0.5, Decimals=2,
         Callback = function(val) GC.Glow.Transparency = val end,
     })
 
-    ESPExtra:Slider({
+    EspExtraSec:Slider({
         Name     = "skeleton thickness",
         Flag     = "ESPSkelThick",
-        Min      = 0.5, Max = 5, Default = 1, Decimals = 1,
+        Min=0.5, Max=5, Default=1, Decimals=1,
         Callback = function(val) GC.Skeleton.Thickness = val end,
     })
 
-    ESPExtra:Slider({
+    EspExtraSec:Slider({
         Name     = "tracer thickness",
         Flag     = "ESPTracerThick",
-        Min      = 0.5, Max = 5, Default = 1, Decimals = 1,
+        Min=0.5, Max=5, Default=1, Decimals=1,
         Callback = function(val) GC.Tracers.Thickness = val end,
     })
 
-    ESPExtra:Slider({
+    EspExtraSec:Slider({
         Name     = "chams transparency",
         Flag     = "ESPChamTrans",
-        Min      = 0, Max = 1, Default = 0, Decimals = 2,
+        Min=0, Max=1, Default=0, Decimals=2,
         Callback = function(val) GC.Chams.Transparency = val end,
     })
 end
 
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
---           BULLET TRACERS SYSTEM
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
+--
+--                   BULLET TRACERS SYSTEM
+--
+-- ══════════════════════════════════════════════════════════════
 
 do
-    local tracerEnabled      = true
+    -- State
+    local tracerEnabled      = false
     local tracerColor        = Color3.fromRGB(255, 255, 255)
     local tracerDuration     = 3
     local tracerSize         = 1
@@ -2457,17 +2300,18 @@ do
     local tracerLerpSpeed    = 0
     local tracerStyle        = "Line"
     local tracers            = {}
-    local tracerconn         = nil
-    local tracerEffectHooked = false
+    local tracerConn         = nil
+    local tracerHooked       = false
 
-    local lastTracerCreations = {}
-    local DEDUPE_INTERVAL     = 0.1
-    local DEDUPE_EXPIRY       = 1.0
-    local DEDUPE_PRUNE_INT    = 120
-    local frameCount          = 0
-    local DISABLE_TRACERS     = false
+    -- Dedup
+    local lastCreations   = {}
+    local DEDUP_INTERVAL  = 0.1
+    local DEDUP_EXPIRY    = 1.0
+    local DEDUP_PRUNE     = 120
+    local frameCount      = 0
 
-    local textureAssets = {
+    -- Texture IDs
+    local TEXTURES = {
         Line      = "",
         Beam      = "rbxassetid://12781852245",
         Lightning = "rbxassetid://446111271",
@@ -2480,13 +2324,14 @@ do
         Laser     = "rbxassetid://14549123968",
     }
 
-    local function muzzlepos_tr()
+    -- Muzzle position
+    local function getMuzzle()
         local vm = Workspace:FindFirstChild("ViewModels")
         if not vm then return nil end
         local fp = vm:FindFirstChild("FirstPerson")
         if not fp then return nil end
         for _, model in ipairs(fp:GetChildren()) do
-            if model:IsA("Model") and model.Name:find("^" .. LocalPlayer.Name) then
+            if model:IsA("Model") and model.Name:find("^"..LocalPlayer.Name) then
                 local iv = model:FindFirstChild("ItemVisual")
                 if iv then
                     local body = iv:FindFirstChild("Body")
@@ -2505,237 +2350,202 @@ do
         return nil
     end
 
-    local function getTracerDrawEnd(tr, age)
-        if tracerLerpSpeed <= 0 then return tr.EndPos end
-        local drawTime = math.max(tracerLerpSpeed * 0.25, 0.001)
-        local progress = math.clamp(age / drawTime, 0, 1)
-        return tr.StartPos:Lerp(tr.EndPos, progress)
+    -- Draw end with lerp
+    local function getDrawEnd(tr, age)
+        if tracerLerpSpeed <= 0 then return tr.endPos end
+        local t = math.clamp(age / math.max(tracerLerpSpeed*0.25, 0.001), 0, 1)
+        return tr.startPos:Lerp(tr.endPos, t)
     end
 
-    local function makeLineTracer(pos3, endPos)
-        local outline = Drawing.new("Line")
-        outline.Thickness    = 4 * tracerSize
-        outline.Color        = Color3.new(0, 0, 0)
-        outline.Transparency = 1
-        outline.Visible      = false
-        local line = Drawing.new("Line")
-        line.Thickness    = 2 * tracerSize
-        line.Color        = tracerColor
-        line.Transparency = 1
-        line.Visible      = false
+    -- Create line tracer
+    local function mkLineTracer(s, e)
+        local ol = Drawing.new("Line")
+        ol.Thickness=4*tracerSize ol.Color=Color3.new(0,0,0)
+        ol.Transparency=1 ol.Visible=false
+        local ln = Drawing.new("Line")
+        ln.Thickness=2*tracerSize ln.Color=tracerColor
+        ln.Transparency=1 ln.Visible=false
         table.insert(tracers, {
-            IsLine      = true,
-            Outline     = outline,
-            Line        = line,
-            StartPos    = pos3,
-            EndPos      = endPos,
-            Lifetime    = tracerDuration,
-            FadeTime    = tracerFadeTime,
-            CreatedTime = tick(),
+            isLine=true, outline=ol, line=ln,
+            startPos=s, endPos=e,
+            lifetime=tracerDuration, fadeTime=tracerFadeTime,
+            createdAt=tick(),
         })
     end
 
-    local function makeBeamTracer(pos3, endPos)
-        local a0 = Instance.new("Attachment")
-        a0.Parent = Workspace.Terrain
-        local a1 = Instance.new("Attachment")
-        a1.Parent = Workspace.Terrain
+    -- Create beam tracer
+    local function mkBeamTracer(s, e)
+        local a0 = Instance.new("Attachment") a0.Parent = Workspace.Terrain
+        local a1 = Instance.new("Attachment") a1.Parent = Workspace.Terrain
         local beam = Instance.new("Beam")
         beam.Attachment0    = a0
         beam.Attachment1    = a1
         beam.Color          = ColorSequence.new(tracerColor)
-        local baseW         = tracerStyle == "Laser" and 0.02 or 0.15
-        beam.Width0         = baseW * tracerSize
-        beam.Width1         = baseW * tracerSize
+        local bw            = tracerStyle == "Laser" and 0.02 or 0.15
+        beam.Width0         = bw * tracerSize
+        beam.Width1         = bw * tracerSize
         beam.Transparency   = NumberSequence.new(0)
         beam.FaceCamera     = true
         beam.LightEmission  = 0.8
         beam.LightInfluence = 0.2
-        local tex = textureAssets[tracerStyle]
+        local tex = TEXTURES[tracerStyle]
         if tex and tex ~= "" then
-            beam.Texture       = tex
-            beam.TextureLength = 4
-            beam.TextureSpeed  = 1
+            beam.Texture=tex beam.TextureLength=4 beam.TextureSpeed=1
         else
-            beam.Texture       = ""
-            beam.TextureLength = 1
-            beam.TextureSpeed  = 0
+            beam.Texture="" beam.TextureLength=1 beam.TextureSpeed=0
         end
         beam.Parent      = Workspace.Terrain
-        a0.WorldPosition = pos3
-        a1.WorldPosition = endPos
+        a0.WorldPosition = s
+        a1.WorldPosition = e
         table.insert(tracers, {
-            IsLine      = false,
-            Beam        = beam,
-            Attachment0 = a0,
-            Attachment1 = a1,
-            StartPos    = pos3,
-            EndPos      = endPos,
-            Lifetime    = tracerDuration,
-            FadeTime    = tracerFadeTime,
-            CreatedTime = tick(),
+            isLine=false, beam=beam, a0=a0, a1=a1,
+            startPos=s, endPos=e,
+            lifetime=tracerDuration, fadeTime=tracerFadeTime,
+            createdAt=tick(),
         })
     end
 
-    local function maketracer(pos3, endPos)
-        if DISABLE_TRACERS or not pos3 or not endPos then return end
-        local kx = math.floor(pos3.X*5+0.5)
-        local ky = math.floor(pos3.Y*5+0.5)
-        local kz = math.floor(pos3.Z*5+0.5)
-        local ex = math.floor(endPos.X*5+0.5)
-        local ey = math.floor(endPos.Y*5+0.5)
-        local ez = math.floor(endPos.Z*5+0.5)
-        local posKey = kx*1e9 + ky*1e6 + kz*1e3 + ex + ey*1e-3 + ez*1e-6
-        local now    = tick()
-        local last   = lastTracerCreations[posKey]
-        if last and (now - last) < DEDUPE_INTERVAL then return end
-        lastTracerCreations[posKey] = now
-        if tracerStyle == "Line" then
-            makeLineTracer(pos3, endPos)
+    -- Spawn tracer with dedup
+    local function spawnTracer(s, e)
+        if not s or not e then return end
+        local kx = math.floor(s.X*5+0.5)
+        local ky = math.floor(s.Y*5+0.5)
+        local kz = math.floor(s.Z*5+0.5)
+        local ex = math.floor(e.X*5+0.5)
+        local ey = math.floor(e.Y*5+0.5)
+        local ez = math.floor(e.Z*5+0.5)
+        local key = kx*1e9 + ky*1e6 + kz*1e3 + ex + ey*1e-3 + ez*1e-6
+        local now = tick()
+        if lastCreations[key] and (now - lastCreations[key]) < DEDUP_INTERVAL then return end
+        lastCreations[key] = now
+        if tracerStyle == "Line" then mkLineTracer(s, e) else mkBeamTracer(s, e) end
+    end
+
+    -- Destroy tracer
+    local function destroyTracer(tr)
+        if tr.isLine then
+            if tr.outline then tr.outline:Remove() end
+            if tr.line    then tr.line:Remove()    end
         else
-            makeBeamTracer(pos3, endPos)
+            if tr.beam then tr.beam:Destroy() end
+            if tr.a0   then tr.a0:Destroy()   end
+            if tr.a1   then tr.a1:Destroy()   end
         end
     end
 
-    local function destroyTracer(t)
-        if t.IsLine then
-            if t.Outline then t.Outline:Remove() end
-            if t.Line    then t.Line:Remove()    end
-        else
-            if t.Beam        then t.Beam:Destroy()        end
-            if t.Attachment0 then t.Attachment0:Destroy() end
-            if t.Attachment1 then t.Attachment1:Destroy() end
-        end
-    end
-
-    local function updtracers()
+    -- Update all tracers
+    local function updateTracers()
         if #tracers == 0 then return end
         frameCount = frameCount + 1
         local now  = tick()
         local cam  = Workspace.CurrentCamera
 
-        if frameCount % DEDUPE_PRUNE_INT == 0 then
-            for k, t in next, lastTracerCreations do
-                if (now - t) > DEDUPE_EXPIRY then
-                    lastTracerCreations[k] = nil
-                end
+        -- Prune dedup cache
+        if frameCount % DEDUP_PRUNE == 0 then
+            for k, t in next, lastCreations do
+                if (now-t) > DEDUP_EXPIRY then lastCreations[k]=nil end
             end
         end
 
         local i = #tracers
         while i >= 1 do
             local tr  = tracers[i]
-            local age = now - tr.CreatedTime
-            if age >= tr.Lifetime then
+            local age = now - tr.createdAt
+            if age >= tr.lifetime then
                 destroyTracer(tr)
-                tracers[i]         = tracers[#tracers]
-                tracers[#tracers]  = nil
+                tracers[i]        = tracers[#tracers]
+                tracers[#tracers] = nil
             else
-                local fadeAlpha
-                local fadeStart = tr.Lifetime - tr.FadeTime
-                if age >= fadeStart then
-                    fadeAlpha = 1 - math.clamp((age - fadeStart) / tr.FadeTime, 0, 1)
-                else
-                    fadeAlpha = 1
-                end
-                if tr.IsLine then
-                    local drawEnd = getTracerDrawEnd(tr, age)
-                    local s2, onS = cam:WorldToViewportPoint(tr.StartPos)
-                    local e2, onE = cam:WorldToViewportPoint(drawEnd)
-                    local s2v = Vector2.new(s2.X, s2.Y)
-                    local e2v = Vector2.new(e2.X, e2.Y)
-                    if onS and onE and (e2v-s2v).Magnitude > 0.1 and (e2v-s2v).Magnitude < 3000 then
-                        tr.Outline.From        = s2v
-                        tr.Outline.To          = e2v
-                        tr.Outline.Transparency = fadeAlpha
-                        tr.Outline.Visible     = true
-                        tr.Line.From           = s2v
-                        tr.Line.To             = e2v
-                        tr.Line.Transparency   = fadeAlpha
-                        tr.Line.Visible        = true
+                -- Fade alpha
+                local fadeStart = tr.lifetime - tr.fadeTime
+                local alpha     = age >= fadeStart
+                    and (1 - math.clamp((age-fadeStart)/tr.fadeTime, 0, 1))
+                    or  1
+
+                if tr.isLine then
+                    local drawEnd = getDrawEnd(tr, age)
+                    local s2, sOk = cam:WorldToViewportPoint(tr.startPos)
+                    local e2, eOk = cam:WorldToViewportPoint(drawEnd)
+                    local sv = Vector2.new(s2.X, s2.Y)
+                    local ev = Vector2.new(e2.X, e2.Y)
+                    local len = (ev-sv).Magnitude
+                    if sOk and eOk and len > 0.1 and len < 3000 then
+                        tr.outline.From=sv tr.outline.To=ev tr.outline.Transparency=alpha tr.outline.Visible=true
+                        tr.line.From=sv   tr.line.To=ev   tr.line.Transparency=alpha   tr.line.Visible=true
                     else
-                        tr.Outline.Visible = false
-                        tr.Line.Visible    = false
+                        tr.outline.Visible=false tr.line.Visible=false
                     end
                 else
-                    local drawEnd = getTracerDrawEnd(tr, age)
-                    if tr.Attachment0 then tr.Attachment0.WorldPosition = tr.StartPos end
-                    if tr.Attachment1 then tr.Attachment1.WorldPosition = drawEnd     end
-                    tr.Beam.Transparency = NumberSequence.new(1 - fadeAlpha)
+                    local drawEnd = getDrawEnd(tr, age)
+                    if tr.a0 then tr.a0.WorldPosition = tr.startPos end
+                    if tr.a1 then tr.a1.WorldPosition = drawEnd     end
+                    tr.beam.Transparency = NumberSequence.new(1-alpha)
                 end
             end
             i = i - 1
         end
     end
 
+    -- Hook TracerEffect module
     local function hookTracerEffect()
-        if tracerEffectHooked then return end
+        if tracerHooked then return end
         pcall(function()
-            local TracerEffect = require(
-                LocalPlayer.PlayerScripts.Modules.TracerEffect
-            )
-            local origPlay = TracerEffect.Play
-            TracerEffect.Play = function(self, tracerData, cfg_t, extraData)
-                if tracerEnabled and tracerData and tracerData.IsLocal
-                    and tracerData.RaycastResults then
-                    local mPos = muzzlepos_tr()
-                    if mPos then
-                        for _, hit in ipairs(tracerData.RaycastResults) do
-                            if hit.Position then
-                                maketracer(mPos, hit.Position)
-                            end
+            local TE      = require(LocalPlayer.PlayerScripts.Modules.TracerEffect)
+            local origPlay = TE.Play
+            TE.Play = function(self, data, c, extra)
+                if tracerEnabled and data and data.IsLocal and data.RaycastResults then
+                    local mpos = getMuzzle()
+                    if mpos then
+                        for _, hit in ipairs(data.RaycastResults) do
+                            if hit.Position then spawnTracer(mpos, hit.Position) end
                         end
                     end
                 end
-                return origPlay(self, tracerData, cfg_t, extraData)
+                return origPlay(self, data, c, extra)
             end
-            tracerEffectHooked = true
+            tracerHooked = true
         end)
     end
 
     local function startTracers()
-        if DISABLE_TRACERS then tracerEnabled = false return end
         hookTracerEffect()
-        if not tracerconn then
-            tracerconn = RunService.RenderStepped:Connect(updtracers)
+        if not tracerConn then
+            tracerConn = RunService.RenderStepped:Connect(updateTracers)
         end
     end
 
-    local function stoptracers()
-        if tracerconn then
-            tracerconn:Disconnect()
-            tracerconn = nil
-        end
+    local function stopTracers()
+        if tracerConn then tracerConn:Disconnect() tracerConn=nil end
         for _, tr in ipairs(tracers) do destroyTracer(tr) end
         tracers = {}
     end
 
-    -- ── Tracer UI ──────────────────────────────
+    -- ── Tracer UI ──────────────────────────────────────────────
 
-    TracerSection:Toggle({
+    TracerSec:Toggle({
         Name     = "enable",
         Flag     = "TracerEnabled",
         Default  = false,
         Callback = function(val)
             tracerEnabled = val
-            if val then startTracers() else stoptracers() end
+            if val then startTracers() else stopTracers() end
         end,
     }):Colorpicker({
         Flag     = "TracerColor",
         Default  = Color3.fromRGB(255, 255, 255),
-        Callback = function(val)
-            tracerColor = val
+        Callback = function(c)
+            tracerColor = c
             for _, tr in ipairs(tracers) do
-                if tr.IsLine then
-                    if tr.Line then tr.Line.Color = val end
-                elseif tr.Beam then
-                    tr.Beam.Color = ColorSequence.new(val)
+                if tr.isLine then
+                    if tr.line then tr.line.Color = c end
+                elseif tr.beam then
+                    tr.beam.Color = ColorSequence.new(c)
                 end
             end
         end,
     })
 
-    TracerSection:Dropdown({
+    TracerSec:Dropdown({
         Name     = "style",
         Flag     = "TracerStyle",
         Default  = "Line",
@@ -2743,81 +2553,81 @@ do
         Callback = function(val) tracerStyle = val end,
     })
 
-    TracerSection:Slider({
+    TracerSec:Slider({
         Name     = "duration",
         Flag     = "TracerDuration",
-        Min      = 0.1, Max = 10, Default = 3, Decimals = 1,
+        Min=0.1, Max=10, Default=3, Decimals=1,
         Callback = function(val)
             tracerDuration = val
-            for _, tr in ipairs(tracers) do tr.Lifetime = val end
+            for _, tr in ipairs(tracers) do tr.lifetime = val end
         end,
     })
 
-    TracerSection:Slider({
+    TracerSec:Slider({
         Name     = "size",
         Flag     = "TracerSize",
-        Min      = 0.5, Max = 5, Default = 1, Decimals = 1,
+        Min=0.5, Max=5, Default=1, Decimals=1,
         Callback = function(val)
             tracerSize = val
             for _, tr in ipairs(tracers) do
-                if tr.IsLine then
-                    if tr.Outline then tr.Outline.Thickness = 4 * val end
-                    if tr.Line    then tr.Line.Thickness    = 2 * val end
-                elseif tr.Beam then
-                    local bW = tracerStyle == "Laser" and 0.02 or 0.15
-                    tr.Beam.Width0 = bW * val
-                    tr.Beam.Width1 = bW * val
+                if tr.isLine then
+                    if tr.outline then tr.outline.Thickness = 4*val end
+                    if tr.line    then tr.line.Thickness    = 2*val end
+                elseif tr.beam then
+                    local bw = tracerStyle=="Laser" and 0.02 or 0.15
+                    tr.beam.Width0 = bw*val
+                    tr.beam.Width1 = bw*val
                 end
             end
         end,
     })
 
-    TracerSection:Slider({
+    TracerSec:Slider({
         Name     = "fade time",
         Flag     = "TracerFade",
-        Min      = 0, Max = 2, Default = 0.5, Decimals = 1,
+        Min=0, Max=2, Default=0.5, Decimals=1,
         Callback = function(val)
             tracerFadeTime = val
-            for _, tr in ipairs(tracers) do tr.FadeTime = val end
+            for _, tr in ipairs(tracers) do tr.fadeTime = val end
         end,
     })
 
-    TracerSection:Slider({
+    TracerSec:Slider({
         Name     = "lerp speed",
-        Flag     = "TracerLerpSpeed",
-        Min      = 0, Max = 5, Default = 0, Decimals = 1,
+        Flag     = "TracerLerp",
+        Min=0, Max=5, Default=0, Decimals=1,
         Callback = function(val) tracerLerpSpeed = val end,
     })
 
+    -- Hook on load
     task.defer(function()
-        startTracers()
         for _ = 1, 30 do
-            if tracerEffectHooked then break end
+            if tracerHooked then break end
             hookTracerEffect()
             task.wait(0.5)
         end
     end)
 end
 
--- ══════════════════════════════════════════════
--- ██████████████████████████████████████████████
---               MISC SECTION
--- ██████████████████████████████████████████████
--- ══════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════
+--
+--                      MISC SECTION
+--
+-- ══════════════════════════════════════════════════════════════
 
-MiscSection:Button():Add("Rejoin", function()
+MiscSec:Button():Add("Rejoin", function()
     pcall(function()
         game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
     end)
 end)
 
-MiscSection:Button():Add("Reset Character", function()
+MiscSec:Button():Add("Reset Character", function()
     local char = LocalPlayer.Character
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
     if hum then hum.Health = 0 end
 end)
 
-MiscSection:Label("Instance Hub | Built from scratch", "Center")
+MiscSec:Label("Instance Hub | v2.0", "Center")
 
 -- ══════════════════════════════════════════════
 -- FINALIZE
