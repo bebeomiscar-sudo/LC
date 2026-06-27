@@ -14,7 +14,6 @@
 -- =============================================
 
 do
-    -- ✅ BYPASS 1: Hide hookfunction from getfenv
     -- CameraSecurity scans getfenv for hookfunction
     pcall(function()
         if not getfenv or not hookfunction then return end
@@ -62,7 +61,6 @@ do
         end
     end)
 
-    -- ✅ BYPASS 3: Mouse reference fix
     -- AC uses weak table to detect GetMouse() being stored
     -- We override GetMouse to never hold strong reference
     pcall(function()
@@ -92,11 +90,9 @@ do
         print("[AC Bypass] Mouse reference fix applied")
     end)
 
-    -- ✅ BYPASS 4: Dont touch CameraSecurity metatable
     -- Just leave it alone — its a distraction module
     -- Our script never requires it
 
-    -- ✅ Safety check
     local function runSafetyCheck()
         local envOk = true
         pcall(function()
@@ -105,18 +101,6 @@ do
                 envOk = false
             end
         end)
-        print("╔══════════════════════════════════╗")
-        print("║   RIVALS AC BYPASS — STATUS      ║")
-        print("╠══════════════════════════════════╣")
-        print("║ ✅ Using UserInputService         ║")
-        print("║ ✅ cloneref on services           ║")
-        print(("║ %s hookfunction visibility       ║"):format(envOk and "✅" or "⚠️"))
-        print("║ ✅ Mouse reference fix            ║")
-        print("║ ✅ Kick() detection fix           ║")
-        print("╚══════════════════════════════════╝")
-    end
-
-    runSafetyCheck()
     print("[AC Bypass] Rivals bypass loaded — pre-loader complete")
 end
 
