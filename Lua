@@ -11,12 +11,9 @@ local function KillAntiCheat()
 end
 
 KillAntiCheat()
-
 task.spawn(function()
-    task.wait(0.1)
-    KillAntiCheat()
-    task.wait(0.5)
-    KillAntiCheat()
+    task.wait(0.1); KillAntiCheat()
+    task.wait(0.5); KillAntiCheat()
 end)
 
 local descendantConn
@@ -37,10 +34,7 @@ local old_setmetatable; old_setmetatable = hookfunction(getrenv().setmetatable, 
 end))
 
 local old_kick; old_kick = hookfunction(game.Kick, newcclosure(function(self, ...)
-    local args = {...}
-    if #args == 0 then
-        error("Kick: 1 argument expected", 2)
-    end
+    if #{...} == 0 then error("Kick: 1 argument expected", 2) end
     return true
 end))
 
@@ -56,9 +50,7 @@ local function FetchWithRetry(url, attempts)
     attempts = attempts or 5
     for i = 1, attempts do
         local ok, result = pcall(game.HttpGet, game, url)
-        if ok and type(result) == 'string' and #result > 0 then
-            return result
-        end
+        if ok and type(result) == 'string' and #result > 0 then return result end
         task.wait(0.6 * i)
     end
     return nil
@@ -95,186 +87,111 @@ local lp                = Players.LocalPlayer
 local cam               = ws.CurrentCamera
 
 local _connections = {}
-local function trackConn(c)
-    table.insert(_connections, c)
-    return c
-end
+local function trackConn(c) table.insert(_connections, c) return c end
 local function cleanupAll()
     for _, c in ipairs(_connections) do
-        if c and typeof(c) == "RBXScriptConnection" then
-            pcall(function() c:Disconnect() end)
-        end
+        if c and typeof(c) == "RBXScriptConnection" then pcall(function() c:Disconnect() end) end
     end
     _connections = {}
 end
 
 local Window = Library:CreateWindow({
-    Title        = 'Rivals Hub',
-    Center       = true,
-    AutoShow     = true,
-    TabPadding   = 8,
-    MenuFadeTime = 0.2,
-    MobileButton = true,
+    Title = 'Rivals Hub', Center = true, AutoShow = true, TabPadding = 8, MenuFadeTime = 0.2, MobileButton = true,
 })
 
 local Tabs = {
-    Aimbot      = Window:AddTab('Aimbot'),
-    SilentAim   = Window:AddTab('Silent Aim'),
-    Ragebot     = Window:AddTab('Ragebot'),
-    Triggerbot  = Window:AddTab('Triggerbot'),
-    Wallbang    = Window:AddTab('Wallbang'),
-    HitSound    = Window:AddTab('Hit Sound'),
-    Visuals     = Window:AddTab('Visuals'),
-    Camera      = Window:AddTab('Camera'),
-    Misc        = Window:AddTab('Misc'),
-    Skybox      = Window:AddTab('Skybox'),
-    Exploits    = Window:AddTab('Exploits'),
-    UISettings  = Window:AddTab('UI Settings'),
+    Aimbot = Window:AddTab('Aimbot'), SilentAim = Window:AddTab('Silent Aim'),
+    Ragebot = Window:AddTab('Ragebot'), Triggerbot = Window:AddTab('Triggerbot'),
+    Wallbang = Window:AddTab('Wallbang'), HitSound = Window:AddTab('Hit Sound'),
+    Visuals = Window:AddTab('Visuals'), Camera = Window:AddTab('Camera'),
+    Misc = Window:AddTab('Misc'), Skybox = Window:AddTab('Skybox'),
+    Exploits = Window:AddTab('Exploits'), UISettings = Window:AddTab('UI Settings'),
 }
 
 local function notify(title, desc, dur)
     Library:Notify({ Title = title, Content = desc, Duration = dur or 2 })
 end
 
-local function safeRequire(path)
-    local ok, r = pcall(require, path)
-    return ok and r or nil
-end
-
+local function safeRequire(path) local ok, r = pcall(require, path) return ok and r or nil end
 local function safeWait(parent, name, timeout)
     if not parent then return nil end
     local ok, result = pcall(function() return parent:WaitForChild(name, timeout) end)
     return ok and result or nil
 end
 
--- Updated Module Loading with safety checks
-local Controllers       = safeWait(lp:WaitForChild("PlayerScripts"), "Controllers", 10)
-local CameraController  = safeRequire(safeWait(Controllers, "CameraController", 10))
+local Controllers = safeWait(lp:WaitForChild("PlayerScripts"), "Controllers", 10)
+local CameraController = safeRequire(safeWait(Controllers, "CameraController", 10))
 local FighterController = safeRequire(safeWait(Controllers, "FighterController", 10))
-local Modules           = safeWait(ReplicatedStorage, "Modules", 10)
-local util              = safeRequire(safeWait(Modules, "Utility", 10))
-local enums             = safeRequire(safeWait(Modules, "EnumLibrary", 10))
-local GunModule         = safeRequire(safeWait(safeWait(lp:WaitForChild("PlayerScripts"), "Modules", 10), "ItemTypes") and lp.PlayerScripts.Modules.ItemTypes:FindFirstChild("Gun") or nil)
-local DebugController   = safeRequire(safeWait(Controllers, "DebugController", 10))
+local Modules = safeWait(ReplicatedStorage, "Modules", 10)
+local util = safeRequire(safeWait(Modules, "Utility", 10))
+local enums = safeRequire(safeWait(Modules, "EnumLibrary", 10))
 
+local GunModule = nil
 pcall(function()
-    if DebugController then DebugController:SetHandicapsEnabled(true) end
+    local itemTypes = safeWait(safeWait(lp:WaitForChild("PlayerScripts"), "Modules", 10), "ItemTypes", 10)
+    GunModule = safeRequire(safeWait(itemTypes, "Gun", 10))
 end)
 
-local RB            = ReplicatedStorage:WaitForChild("Remotes", 10)
-local RBF           = RB:WaitForChild("Replication", 10):WaitForChild("Fighter", 10)
+local DebugController = safeRequire(safeWait(Controllers, "DebugController", 10))
+pcall(function() if DebugController then DebugController:SetHandicapsEnabled(true) end end)
+
+local RB = ReplicatedStorage:WaitForChild("Remotes", 10)
+local RBF = RB:WaitForChild("Replication", 10):WaitForChild("Fighter", 10)
 local UseItemRemote = RBF:WaitForChild("UseItem", 10)
 local PickWeaponsRemote = RBF:WaitForChild("PickWeapons", 10)
-local VoteRemote    = RB:WaitForChild("Duels", 10):WaitForChild("Vote", 10)
-local QueueRemote   = RB:WaitForChild("Matchmaking", 10):WaitForChild("JoinQueue", 10)
+local VoteRemote = RB:WaitForChild("Duels", 10):WaitForChild("Vote", 10)
+local QueueRemote = RB:WaitForChild("Matchmaking", 10):WaitForChild("JoinQueue", 10)
 local SetControlsRemote = RBF:FindFirstChild("SetControls")
 
-local PRIMARY_WEAPONS = {
-    "Distortion","Permafrost","Energy Rifle","Flamethrower",
-    "Grenade Launcher","Minigun","Paintball","Assault Rifle",
-    "Bow","Burst Rifle","Crossbow","Gunblade","RPG","Shotgun","Sniper",
-}
-local SECONDARY_WEAPONS = {
-    "Warper","Energy Pistols","Exogun","Slingshot","Daggers",
-    "Flare Gun","Handgun","Revolver","Shorty","Spray","Uzi",
-}
-local MELEE_WEAPONS = {
-    "Maul","Spear","Trowel","Battle Axe","Chainsaw","Fist",
-    "Katana","Knife","Riot Shield","Scythe",
-}
-local UTILITY_WEAPONS = {
-    "Grappler","Medkit","Subspace Tripmine","Warpstone",
-    "Flashbang","Freeze Ray","Grenade","Jump Pad",
-    "Molotov","Satchel","Smoke Grenade","War Horn",
-}
-local MAPS = {
-    "Arena","Big Arena","Backrooms","Big Backrooms","Legacy Backrooms",
-    "Baseplate","Battleground","Legacy Battleground","Bridge","Chess",
-    "Construction","Crossroads","Big Crossroads","Legacy Crossroads",
-    "Dimensions","Docks","Legacy Docks","Graveyard","Big Graveyard",
-}
-local QUEUE_MODES  = {"1v1","2v2","3v3","4v4","5v5"}
+local PRIMARY_WEAPONS = {"Distortion","Permafrost","Energy Rifle","Flamethrower","Grenade Launcher","Minigun","Paintball","Assault Rifle","Bow","Burst Rifle","Crossbow","Gunblade","RPG","Shotgun","Sniper"}
+local SECONDARY_WEAPONS = {"Warper","Energy Pistols","Exogun","Slingshot","Daggers","Flare Gun","Handgun","Revolver","Shorty","Spray","Uzi"}
+local MELEE_WEAPONS = {"Maul","Spear","Trowel","Battle Axe","Chainsaw","Fist","Katana","Knife","Riot Shield","Scythe"}
+local UTILITY_WEAPONS = {"Grappler","Medkit","Subspace Tripmine","Warpstone","Flashbang","Freeze Ray","Grenade","Jump Pad","Molotov","Satchel","Smoke Grenade","War Horn"}
+local MAPS = {"Arena","Big Arena","Backrooms","Big Backrooms","Legacy Backrooms","Baseplate","Battleground","Legacy Battleground","Bridge","Chess","Construction","Crossroads","Big Crossroads","Legacy Crossroads","Dimensions","Docks","Legacy Docks","Graveyard","Big Graveyard"}
+local QUEUE_MODES = {"1v1","2v2","3v3","4v4","5v5"}
 local DEVICE_TYPES = {"Computer","Mobile","Console","VR"}
-local PARTS        = {"Head","HumanoidRootPart","UpperTorso","LowerTorso","Body","Random"}
+local PARTS = {"Head","HumanoidRootPart","UpperTorso","LowerTorso","Body","Random"}
 
 local PMAP = {
-    ["Head"]             = {"Head"},
-    ["HumanoidRootPart"] = {"HumanoidRootPart"},
-    ["UpperTorso"]       = {"UpperTorso","Torso","HumanoidRootPart"},
-    ["LowerTorso"]       = {"LowerTorso","Torso","HumanoidRootPart"},
-    ["Body"]             = {"UpperTorso","LowerTorso","Torso","HumanoidRootPart"},
-    ["Random"]           = {"Random"},
+    ["Head"] = {"Head"}, ["HumanoidRootPart"] = {"HumanoidRootPart"},
+    ["UpperTorso"] = {"UpperTorso","Torso","HumanoidRootPart"},
+    ["LowerTorso"] = {"LowerTorso","Torso","HumanoidRootPart"},
+    ["Body"] = {"UpperTorso","LowerTorso","Torso","HumanoidRootPart"},
+    ["Random"] = {"Random"},
 }
 
 local HIT_SOUNDS = {
-    ["Rust"]          = "rbxassetid://4764109000",
-    ["Click"]         = "rbxassetid://6042053626",
-    ["Click 2"]       = "rbxassetid://5153644999",
-    ["Beep"]          = "rbxassetid://9120386436",
-    ["Ding"]          = "rbxassetid://4612375109",
-    ["Pop"]           = "rbxassetid://5982421855",
-    ["Punch"]         = "rbxassetid://386946753",
-    ["Headshot"]      = "rbxassetid://4612378735",
-    ["Bone Crack"]    = "rbxassetid://5801253825",
-    ["Minecraft Hit"] = "rbxassetid://131070686",
-    ["Minecraft"]     = "rbxassetid://135478009117226",
-    ["Neverlose"]     = "rbxassetid://82938206376993",
-    ["Skibidi"]       = "rbxassetid://18723913",
-    ["Bruh"]          = "rbxassetid://9120253754",
-    ["Oof"]           = "rbxassetid://5997174966",
-    ["Vine Boom"]     = "rbxassetid://7293984919",
-    ["Metal Hit"]     = "rbxassetid://10734947730",
-    ["Wet"]           = "rbxassetid://4768489490",
-    ["Arrow"]         = "rbxassetid://4612394498",
-    ["Laser"]         = "rbxassetid://5992660828",
-    ["Squeak"]        = "rbxassetid://1300087530",
-    ["Cash"]          = "rbxassetid://4612379547",
-    ["Among Us"]      = "rbxassetid://6936643745",
+    ["Rust"]="rbxassetid://4764109000", ["Click"]="rbxassetid://6042053626",
+    ["Click 2"]="rbxassetid://5153644999", ["Beep"]="rbxassetid://9120386436",
+    ["Ding"]="rbxassetid://4612375109", ["Pop"]="rbxassetid://5982421855",
+    ["Punch"]="rbxassetid://386946753", ["Headshot"]="rbxassetid://4612378735",
+    ["Bone Crack"]="rbxassetid://5801253825", ["Minecraft Hit"]="rbxassetid://131070686",
+    ["Minecraft"]="rbxassetid://135478009117226", ["Neverlose"]="rbxassetid://82938206376993",
+    ["Skibidi"]="rbxassetid://18723913", ["Bruh"]="rbxassetid://9120253754",
+    ["Oof"]="rbxassetid://5997174966", ["Vine Boom"]="rbxassetid://7293984919",
+    ["Metal Hit"]="rbxassetid://10734947730", ["Wet"]="rbxassetid://4768489490",
+    ["Arrow"]="rbxassetid://4612394498", ["Laser"]="rbxassetid://5992660828",
+    ["Squeak"]="rbxassetid://1300087530", ["Cash"]="rbxassetid://4612379547",
+    ["Among Us"]="rbxassetid://6936643745",
 }
 local HIT_SOUND_LIST = {}
 for k in pairs(HIT_SOUNDS) do table.insert(HIT_SOUND_LIST, k) end
 table.sort(HIT_SOUND_LIST)
 
 local SKYBOXES = {
-    ["Default"] = {
-        SkyboxBk="rbxassetid://159454299",SkyboxDn="rbxassetid://159454296",
-        SkyboxFt="rbxassetid://159454293",SkyboxLf="rbxassetid://159454286",
-        SkyboxRt="rbxassetid://159454300",SkyboxUp="rbxassetid://159454295",
-    },
-    ["Night Sky"] = {
-        SkyboxBk="rbxassetid://3095606289",SkyboxDn="rbxassetid://3095606289",
-        SkyboxFt="rbxassetid://3095606294",SkyboxLf="rbxassetid://3095606292",
-        SkyboxRt="rbxassetid://3095606291",SkyboxUp="rbxassetid://3095606290",isNight=true,
-    },
-    ["Bliss"] = {
-        SkyboxBk="rbxassetid://6444884337",SkyboxDn="rbxassetid://6422644718",
-        SkyboxFt="rbxassetid://6444884344",SkyboxLf="rbxassetid://6444884341",
-        SkyboxRt="rbxassetid://6444884348",SkyboxUp="rbxassetid://6444884351",
-    },
-    ["Sunset"] = {
-        SkyboxBk="rbxassetid://2708786809",SkyboxDn="rbxassetid://2708786814",
-        SkyboxFt="rbxassetid://2708786816",SkyboxLf="rbxassetid://2708786812",
-        SkyboxRt="rbxassetid://2708786819",SkyboxUp="rbxassetid://2708786821",
-    },
-    ["Space"] = {
-        SkyboxBk="rbxassetid://159454299",SkyboxDn="rbxassetid://159454296",
-        SkyboxFt="rbxassetid://159454293",SkyboxLf="rbxassetid://159454286",
-        SkyboxRt="rbxassetid://159454300",SkyboxUp="rbxassetid://159454295",isSpace=true,
-    },
+    ["Default"] = {SkyboxBk="rbxassetid://159454299",SkyboxDn="rbxassetid://159454296",SkyboxFt="rbxassetid://159454293",SkyboxLf="rbxassetid://159454286",SkyboxRt="rbxassetid://159454300",SkyboxUp="rbxassetid://159454295"},
+    ["Night Sky"] = {SkyboxBk="rbxassetid://3095606289",SkyboxDn="rbxassetid://3095606289",SkyboxFt="rbxassetid://3095606294",SkyboxLf="rbxassetid://3095606292",SkyboxRt="rbxassetid://3095606291",SkyboxUp="rbxassetid://3095606290",isNight=true},
+    ["Bliss"] = {SkyboxBk="rbxassetid://6444884337",SkyboxDn="rbxassetid://6422644718",SkyboxFt="rbxassetid://6444884344",SkyboxLf="rbxassetid://6444884341",SkyboxRt="rbxassetid://6444884348",SkyboxUp="rbxassetid://6444884351"},
+    ["Sunset"] = {SkyboxBk="rbxassetid://2708786809",SkyboxDn="rbxassetid://2708786814",SkyboxFt="rbxassetid://2708786816",SkyboxLf="rbxassetid://2708786812",SkyboxRt="rbxassetid://2708786819",SkyboxUp="rbxassetid://2708786821"},
+    ["Space"] = {SkyboxBk="rbxassetid://159454299",SkyboxDn="rbxassetid://159454296",SkyboxFt="rbxassetid://159454293",SkyboxLf="rbxassetid://159454286",SkyboxRt="rbxassetid://159454300",SkyboxUp="rbxassetid://159454295",isSpace=true},
 }
 local SKYBOX_LIST = {"Default","Night Sky","Bliss","Sunset","Space"}
 
-local COOLDOWN_FIELDS = {
-    "Cooldown","AttackCooldown","UseDelay","SpinCooldown",
-    "HeavyAttackCooldown","AbilityCooldown","FireCooldown",
-}
+local COOLDOWN_FIELDS = {"Cooldown","AttackCooldown","UseDelay","SpinCooldown","HeavyAttackCooldown","AbilityCooldown","FireCooldown"}
 local WAR_HORN_KEYS = {["War Horn"]=true,["WarHorn"]=true}
 
 local keyBindStates = {}
-local function makeKeybind(id)
-    keyBindStates[id] = { key = nil, mode = "Hold", active = false, held = false }
-end
-
+local function makeKeybind(id) keyBindStates[id] = { key = nil, mode = "Hold", active = false, held = false } end
 local function isKeybindActive(id)
     local kb = keyBindStates[id]
     if not kb then return true end
@@ -366,10 +283,8 @@ local function isValidTarget(player)
     local myChar = lp.Character
     if myChar then
         local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-        local hrp   = char:FindFirstChild("HumanoidRootPart")
-        if myHRP and hrp and (myHRP.Position - hrp.Position).Magnitude > 3000 then
-            return false
-        end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if myHRP and hrp and (myHRP.Position - hrp.Position).Magnitude > 3000 then return false end
     end
     return true
 end
@@ -414,15 +329,14 @@ local function abFind()
         if AB.team and sameTm(p) then continue end
         if not isValidTarget(p) then continue end
         local chr = p.Character
-        local pt  = bPart(chr, AB.part)
+        local pt = bPart(chr, AB.part)
         if not pt then continue end
         local sp, on = cam:WorldToViewportPoint(pt.Position)
         if not on then continue end
         local d = (Vector2.new(sp.X,sp.Y) - center).Magnitude
         if d < bd then
             if AB.vis and not isVis(cam.CFrame.Position, pt) then continue end
-            bd = d
-            best = pt
+            bd = d; best = pt
         end
     end
     return best
@@ -450,9 +364,7 @@ local function applySmartLock(tRot, cur, dt, sd, fr)
         return Vector2.new(cur.X + (tRot.X - cur.X) * fac, cur.Y + angDiff(cur.Y, tRot.Y) * fac)
     end
     local dist2 = math.sqrt((tRot.X-cur.X)^2 + angDiff(cur.Y,tRot.Y)^2)
-    if abCurveStart == nil or dist2 > 0.5 then
-        abCurveStart, abCurveProgress = cur, 0
-    end
+    if abCurveStart == nil or dist2 > 0.5 then abCurveStart, abCurveProgress = cur, 0 end
     local sp2 = (AB.curvePct/100) * 3 * eff
     abCurveProgress = math.clamp(abCurveProgress + sp2*dt, 0, 1)
     local c = abCurveProgress^2 * (3 - 2*abCurveProgress)
@@ -463,30 +375,30 @@ local function applySmartLock(tRot, cur, dt, sd, fr)
 end
 
 local ABMain = Tabs.Aimbot:AddLeftGroupbox('Aimbot')
-local ABAdv  = Tabs.Aimbot:AddRightGroupbox('Advanced')
-local ABKey  = Tabs.Aimbot:AddLeftGroupbox('Keybind')
+local ABAdv = Tabs.Aimbot:AddRightGroupbox('Advanced')
+local ABKey = Tabs.Aimbot:AddLeftGroupbox('Keybind')
 
 ABMain:AddToggle('AimbotOn', { Text='Enable Aimbot', Default=false, Callback=function(v)
     AB.on = v
     if not v then abTgt=nil;abLockT=0;abDoReact=false;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0;invalidateCache() end
     notify('Aimbot', v and 'Active!' or 'Off')
 end})
-ABMain:AddToggle('AimbotTeam',   {Text='Team Check',    Default=true,  Callback=function(v) AB.team      = v end})
-ABMain:AddToggle('AimbotVis',    {Text='Visible Check', Default=true,  Callback=function(v) AB.vis       = v end})
+ABMain:AddToggle('AimbotTeam', {Text='Team Check', Default=true, Callback=function(v) AB.team = v end})
+ABMain:AddToggle('AimbotVis', {Text='Visible Check', Default=true, Callback=function(v) AB.vis = v end})
 ABMain:AddToggle('AimbotCenter', {Text='Screen Center', Default=false, Callback=function(v) AB.useCenter = v end})
-ABMain:AddToggle('AimbotDynFov', {Text='Dynamic FOV',   Default=false, Callback=function(v) AB.dynFov    = v end})
+ABMain:AddToggle('AimbotDynFov', {Text='Dynamic FOV', Default=false, Callback=function(v) AB.dynFov = v end})
 ABMain:AddDropdown('AimbotPart', {Text='Aim Part', Values=PARTS, Default='Head', Callback=function(v) AB.part = v end})
 ABMain:AddDropdown('AimbotMode', {Text='Lock Mode', Values={'Soft','Magnet','Curve'}, Default='Soft', Callback=function(v)
     AB.lockMode = v; abCurveStart = nil; abCurveProgress = 0
 end})
 ABMain:AddSlider('AimbotFov', {Text='FOV Size', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) AB.fov=v; abCirc.Radius=v end})
 
-ABAdv:AddSlider('AimbotSpd',      {Text='Speed',          Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speed        = v/100 end})
-ABAdv:AddSlider('AimbotAtkSpd',   {Text='Attack Speed',   Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speedAttack  = v/100 end})
-ABAdv:AddSlider('AimbotSpdScale', {Text='Speed Scale FOV',Default=50,  Min=0, Max=100, Rounding=0, Suffix='%',     Callback=function(v) AB.speedScaleFov= v     end})
-ABAdv:AddSlider('AimbotCurve',    {Text='Curve',          Default=10,  Min=1, Max=400, Rounding=0, Suffix='%',     Callback=function(v) AB.curvePct     = v     end})
-ABAdv:AddSlider('AimbotMaxLock',  {Text='Max Lock',       Default=300, Min=1, Max=1000,Rounding=0, Suffix='x0.01s',Callback=function(v) AB.maxLock      = v/100 end})
-ABAdv:AddSlider('AimbotReact',    {Text='Reaction',       Default=100, Min=0, Max=500, Rounding=0, Suffix='ms',    Callback=function(v) AB.reactTime    = v     end})
+ABAdv:AddSlider('AimbotSpd', {Text='Speed', Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speed = v/100 end})
+ABAdv:AddSlider('AimbotAtkSpd', {Text='Attack Speed', Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speedAttack = v/100 end})
+ABAdv:AddSlider('AimbotSpdScale', {Text='Speed Scale FOV', Default=50, Min=0, Max=100, Rounding=0, Suffix='%', Callback=function(v) AB.speedScaleFov = v end})
+ABAdv:AddSlider('AimbotCurve', {Text='Curve', Default=10, Min=1, Max=400, Rounding=0, Suffix='%', Callback=function(v) AB.curvePct = v end})
+ABAdv:AddSlider('AimbotMaxLock', {Text='Max Lock', Default=300, Min=1, Max=1000, Rounding=0, Suffix='x0.01s', Callback=function(v) AB.maxLock = v/100 end})
+ABAdv:AddSlider('AimbotReact', {Text='Reaction', Default=100, Min=0, Max=500, Rounding=0, Suffix='ms', Callback=function(v) AB.reactTime = v end})
 
 ABKey:AddDropdown('AimbotKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
     keyBindStates["Aimbot"].mode, keyBindStates["Aimbot"].active, keyBindStates["Aimbot"].held = v, false, false
@@ -504,14 +416,14 @@ local fovHalf = Drawing.new("Circle")
 fovHalf.Visible, fovHalf.Thickness, fovHalf.Color, fovHalf.Filled, fovHalf.NumSides, fovHalf.Radius = false, 1, Color3.fromRGB(255,255,255), false, 32, 75
 
 local FOVMain = Tabs.Visuals:AddLeftGroupbox('Aimbot FOV')
-local FOVSil  = Tabs.Visuals:AddRightGroupbox('Silent FOV')
+local FOVSil = Tabs.Visuals:AddRightGroupbox('Silent FOV')
 
-FOVMain:AddToggle('FovVisible', {Text='Show FOV Circle', Default=true,  Callback=function(v) fovCfg.visible   = v end})
-FOVMain:AddToggle('FovHalf',    {Text='Half Circle',     Default=false, Callback=function(v) fovCfg.half      = v end})
-FOVMain:AddToggle('FovCenter',  {Text='Screen Center',   Default=false, Callback=function(v) fovCfg.useCenter = v end})
+FOVMain:AddToggle('FovVisible', {Text='Show FOV Circle', Default=true, Callback=function(v) fovCfg.visible = v end})
+FOVMain:AddToggle('FovHalf', {Text='Half Circle', Default=false, Callback=function(v) fovCfg.half = v end})
+FOVMain:AddToggle('FovCenter', {Text='Screen Center', Default=false, Callback=function(v) fovCfg.useCenter = v end})
 FOVMain:AddLabel('FOV Color'):AddColorPicker('FovColor', {Default=Color3.fromRGB(255,255,255), Callback=function(v) fovCfg.color = v end})
-FOVMain:AddSlider('FovRadius',    {Text='FOV Radius', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.fovSize=v; AB.fov=v; fovCircle.Radius=v; abCirc.Radius=v end})
-FOVMain:AddSlider('FovOnTarget',  {Text='On Target',  Default=60,  Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.onTarget  = v end})
+FOVMain:AddSlider('FovRadius', {Text='FOV Radius', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.fovSize=v; AB.fov=v; fovCircle.Radius=v; abCirc.Radius=v end})
+FOVMain:AddSlider('FovOnTarget', {Text='On Target', Default=60, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.onTarget = v end})
 FOVMain:AddSlider('FovOnBarrier', {Text='On Barrier', Default=200, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.onBarrier = v end})
 
 local silentCfg = { enabled=false, hitChance=100, prediction=0, visCheck=true, useCenter=false, fovSize=150, maxDist=200, part="Head", circleVisible=true, circleColor=Color3.fromRGB(0,200,255), circleThick=1.5, targetColor=Color3.fromRGB(255,50,50) }
@@ -550,7 +462,7 @@ local function fetchNearest(part)
         if mag < dist and mag < silentCfg.fovSize then
             if silentCfg.visCheck then
                 local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                local orig   = myRoot and myRoot.Position or cam.CFrame.Position
+                local orig = myRoot and myRoot.Position or cam.CFrame.Position
                 if not isVis(orig, hitPart) then continue end
             end
             dist, target = mag, entity
@@ -570,7 +482,7 @@ local function hookSilent()
     silentOldFunc = util.Raycast
     util.Raycast = function(self, origin, direction, distance, ...)
         if silentCfg.enabled and isKeybindActive("SilentAim") and math.random(1,100) <= silentCfg.hitChance then
-            local aim  = fetchNearest(silentCfg.part)
+            local aim = fetchNearest(silentCfg.part)
             local node = aim and aim:FindFirstChild(silentCfg.part)
             if node then
                 local targetPos = node.Position
@@ -596,25 +508,25 @@ local function unhookSilent()
 end
 
 local SAMain = Tabs.SilentAim:AddLeftGroupbox('Silent Aim')
-local SAKey  = Tabs.SilentAim:AddRightGroupbox('Keybind')
+local SAKey = Tabs.SilentAim:AddRightGroupbox('Keybind')
 
 SAMain:AddToggle('SilentOn', {Text='Enable Silent Aim', Default=false, Callback=function(v)
     silentCfg.enabled = v
     if v then hookSilent(); notify("Silent Aim","Active!") else unhookSilent(); notify("Silent Aim","Off") end
 end})
-SAMain:AddToggle('SilentVis',    {Text='Visible Check', Default=true,  Callback=function(v) silentCfg.visCheck  = v end})
+SAMain:AddToggle('SilentVis', {Text='Visible Check', Default=true, Callback=function(v) silentCfg.visCheck = v end})
 SAMain:AddToggle('SilentCenter', {Text='Screen Center', Default=false, Callback=function(v) silentCfg.useCenter = v end})
 SAMain:AddDropdown('SilentPart', {Text='Target Part', Values=PARTS, Default='Head', Callback=function(v) silentCfg.part = v end})
-SAMain:AddSlider('SilentChance', {Text='Hit Chance',   Default=100, Min=1,  Max=100,  Rounding=0, Suffix='%',      Callback=function(v) silentCfg.hitChance  = v end})
-SAMain:AddSlider('SilentPred',   {Text='Prediction',   Default=0,   Min=0,  Max=100,  Rounding=0, Suffix='x0.05', Callback=function(v) silentCfg.prediction = v end})
-SAMain:AddSlider('SilentFov',    {Text='FOV',          Default=150, Min=10, Max=600,  Rounding=0, Suffix=' px',   Callback=function(v) silentCfg.fovSize=v; silentCircle.Radius=v end})
-SAMain:AddSlider('SilentDist',   {Text='Max Distance', Default=200, Min=10, Max=2000, Rounding=0, Suffix=' studs',Callback=function(v) silentCfg.maxDist = v end})
+SAMain:AddSlider('SilentChance', {Text='Hit Chance', Default=100, Min=1, Max=100, Rounding=0, Suffix='%', Callback=function(v) silentCfg.hitChance = v end})
+SAMain:AddSlider('SilentPred', {Text='Prediction', Default=0, Min=0, Max=100, Rounding=0, Suffix='x0.05', Callback=function(v) silentCfg.prediction = v end})
+SAMain:AddSlider('SilentFov', {Text='FOV', Default=150, Min=10, Max=600, Rounding=0, Suffix=' px', Callback=function(v) silentCfg.fovSize=v; silentCircle.Radius=v end})
+SAMain:AddSlider('SilentDist', {Text='Max Distance', Default=200, Min=10, Max=2000, Rounding=0, Suffix=' studs', Callback=function(v) silentCfg.maxDist = v end})
 
 FOVSil:AddToggle('SilentCircOn', {Text='Show Circle', Default=true, Callback=function(v) silentCfg.circleVisible=v; if not v then silentCircle.Visible=false end end})
 FOVSil:AddLabel('Normal Color'):AddColorPicker('SilentCircColor', {Default=Color3.fromRGB(0,200,255), Callback=function(v) silentCfg.circleColor=v end})
 FOVSil:AddLabel('On Target Color'):AddColorPicker('SilentTargColor', {Default=Color3.fromRGB(255,50,50), Callback=function(v) silentCfg.targetColor=v end})
-FOVSil:AddSlider('SilentCircThick', {Text='Thickness', Default=15, Min=5,  Max=50,  Rounding=0, Suffix='x0.1',  Callback=function(v) silentCfg.circleThick=v*0.1; silentCircle.Thickness=v*0.1 end})
-FOVSil:AddSlider('SilentCircSegs',  {Text='Segments',  Default=64, Min=8,  Max=128, Rounding=0, Suffix=' sides',Callback=function(v) silentCircle.NumSides=v end})
+FOVSil:AddSlider('SilentCircThick', {Text='Thickness', Default=15, Min=5, Max=50, Rounding=0, Suffix='x0.1', Callback=function(v) silentCfg.circleThick=v*0.1; silentCircle.Thickness=v*0.1 end})
+FOVSil:AddSlider('SilentCircSegs', {Text='Segments', Default=64, Min=8, Max=128, Rounding=0, Suffix=' sides', Callback=function(v) silentCircle.NumSides=v end})
 
 SAKey:AddDropdown('SilentKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
     keyBindStates["SilentAim"].mode, keyBindStates["SilentAim"].active, keyBindStates["SilentAim"].held = v, false, false
@@ -711,6 +623,7 @@ end
 
 local function rageShoot(targetChar)
     if not util or not enums or not UseItemRemote then notify("Ragebot", "Missing game modules!", 3); return end
+    if not util.EncodeCFrame or not enums.ToEnum then notify("Ragebot", "Game updated - functions missing!", 3); return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
     local oid = lf.EquippedItem:Get("ObjectID")
@@ -718,12 +631,12 @@ local function rageShoot(targetChar)
     local hitPart = hitpartfromname(targetChar, rageCfg.hitpart)
     if not hitPart then return end
     local myChar = lp.Character
-    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
     local offsets = {
-        Vector3.new(0,  2, 0), Vector3.new(0,  4, 0), Vector3.new(0,  6, 0),
-        Vector3.new(2,  2, 0), Vector3.new(-2, 2, 0), Vector3.new(0,  2, 2),
-        Vector3.new(0,  2,-2),
+        Vector3.new(0, 2, 0), Vector3.new(0, 4, 0), Vector3.new(0, 6, 0),
+        Vector3.new(2, 2, 0), Vector3.new(-2, 2, 0), Vector3.new(0, 2, 2),
+        Vector3.new(0, 2,-2),
     }
     local tPos = hitPart.Position
     local attempts = math.clamp(rageCfg.shootAttempts, 1, 5)
@@ -828,11 +741,11 @@ local function startOnPlayer()
         task.spawn(function()
             local ok, err = pcall(function()
                 local myChar = lp.Character
-                local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                local so     = myHRP and myHRP.Position or cam.CFrame.Position
-                local tPos   = tp.Position
-                local rel    = tp.CFrame:ToObjectSpace(CFrame.new(tPos))
-                local data   = {
+                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local so = myHRP and myHRP.Position or cam.CFrame.Position
+                local tPos = tp.Position
+                local rel = tp.CFrame:ToObjectSpace(CFrame.new(tPos))
+                local data = {
                     [utf8.char(1)] = {
                         [utf8.char(0)] = util:EncodeCFrame(CFrame.lookAt(so,tPos)),
                         [utf8.char(1)] = util:EncodeCFrame(CFrame.lookAt(tPos,so)),
@@ -896,10 +809,10 @@ end
 local function hideRageStatus() rsLine1.Visible, rsLine2.Visible = false, false end
 
 local RGMain = Tabs.Ragebot:AddLeftGroupbox('Ragebot')
-local RGAdv  = Tabs.Ragebot:AddRightGroupbox('Advanced')
-local RGOnP  = Tabs.Ragebot:AddLeftGroupbox('On Player')
+local RGAdv = Tabs.Ragebot:AddRightGroupbox('Advanced')
+local RGOnP = Tabs.Ragebot:AddLeftGroupbox('On Player')
 local RGStat = Tabs.Ragebot:AddRightGroupbox('Status Display')
-local RGKey  = Tabs.Ragebot:AddLeftGroupbox('Keybind')
+local RGKey = Tabs.Ragebot:AddLeftGroupbox('Keybind')
 
 RGMain:AddToggle('RageOn', {Text='Enable Ragebot', Default=false, Callback=function(v)
     rageCfg.enabled = v
@@ -954,7 +867,7 @@ local trigCfg = { enabled=false, delay=0.05, hitpart="Head", teamCheck=true, fov
 local trigLastFire, trigConn = 0, nil
 
 local function trigGetCrosshairTarget()
-    local center  = scr()
+    local center = scr()
     local unitRay = cam:ScreenPointToRay(center.X, center.Y)
     local origin, dir = unitRay.Origin, unitRay.Direction * 1000
     local rp = RaycastParams.new()
@@ -975,6 +888,7 @@ end
 
 local function trigShoot(targetChar)
     if not util or not enums or not UseItemRemote then notify("Triggerbot", "Missing game modules!", 3); return end
+    if not util.EncodeCFrame or not enums.ToEnum then notify("Triggerbot", "Game updated - functions missing!", 3); return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
     local oid = lf.EquippedItem:Get("ObjectID")
@@ -982,7 +896,7 @@ local function trigShoot(targetChar)
     local hitPart = hitpartfromname(targetChar, trigCfg.hitpart)
     if not hitPart then return end
     local myChar = lp.Character
-    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
     local shootOrigin = myHRP.Position + Vector3.new(0,2,0)
     local tPos = hitPart.Position
@@ -1018,14 +932,14 @@ local function stopTriggerbot()
 end
 
 local TRGMain = Tabs.Triggerbot:AddLeftGroupbox('Triggerbot')
-local TRGKey  = Tabs.Triggerbot:AddRightGroupbox('Keybind')
+local TRGKey = Tabs.Triggerbot:AddRightGroupbox('Keybind')
 
 TRGMain:AddToggle('TrigOn', {Text='Enable Triggerbot', Default=false, Callback=function(v)
     trigCfg.enabled = v
     if v then startTriggerbot(); notify("Triggerbot","Active!") else stopTriggerbot(); notify("Triggerbot","Off") end
 end})
-TRGMain:AddToggle('TrigTeam',   {Text='Team Check',    Default=true,  Callback=function(v) trigCfg.teamCheck = v end})
-TRGMain:AddToggle('TrigVis',    {Text='Visible Check', Default=true,  Callback=function(v) trigCfg.visCheck  = v end})
+TRGMain:AddToggle('TrigTeam', {Text='Team Check', Default=true, Callback=function(v) trigCfg.teamCheck = v end})
+TRGMain:AddToggle('TrigVis', {Text='Visible Check', Default=true, Callback=function(v) trigCfg.visCheck = v end})
 TRGMain:AddDropdown('TrigPart', {Text='Hit Part', Values={"Head","HumanoidRootPart","UpperTorso","Closest","Random"}, Default='Head', Callback=function(v) trigCfg.hitpart = v end})
 TRGMain:AddSlider('TrigDelay', {Text='Fire Delay', Default=5, Min=1, Max=100, Rounding=0, Suffix='x0.01s', Callback=function(v) trigCfg.delay = v*0.01 end})
 TRGMain:AddSlider('TrigFov', {Text='Detection FOV', Default=20, Min=1, Max=200, Rounding=0, Suffix=' px', Callback=function(v) trigCfg.fovSize = v end})
@@ -1052,7 +966,7 @@ do
             local c = p.Character
             if not c then continue end
             local head = c:FindFirstChild("Head")
-            local hum  = c:FindFirstChildWhichIsA("Humanoid")
+            local hum = c:FindFirstChildWhichIsA("Humanoid")
             if not (head and hum and hum.Health > 0) then continue end
             local d = (cam.CFrame.Position - head.Position).Magnitude
             if d < bd then bd=d; best=p end
@@ -1065,13 +979,13 @@ do
     function wbState:desyncStart(tp2)
         if self.conn2 then self.conn2:Disconnect() end
         self.desync = true
-        self.conn2  = RunService.Heartbeat:Connect(function()
+        self.conn2 = RunService.Heartbeat:Connect(function()
             if not self.desync then return end
             local root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
             if not root then return end
             local tc2 = tp2.Character
             if not tc2 then self:desyncStop(); return end
-            local h2  = tc2:FindFirstChild("Head")
+            local h2 = tc2:FindFirstChild("Head")
             if not h2 then self:desyncStop(); return end
             local sCF, sLV, sAV = root.CFrame, root.AssemblyLinearVelocity, root.AssemblyAngularVelocity
             root.CFrame = h2.CFrame * CFrame.new(0,-5,0)
@@ -1094,8 +1008,9 @@ do
             self.target = self:find()
         end)
         if not __gm or self.hooked then return end
+        if not __gm.StartShooting then return end
+        if not __um or not __um.EncodeCFrame then return end
         local origSS = __gm.StartShooting
-        if not origSS then return end
         self.oldfunc = origSS
         local hookOk = pcall(function()
             rawset(__gm, "StartShooting", function(gSelf, ...)
@@ -1113,15 +1028,13 @@ do
                 if not ap then return table.unpack(results) end
                 local tPos, tCF2 = ap.Position, ap.CFrame
                 local oPos = tPos - Vector3.new(0,3,0)
-                if __um then
-                    pcall(function()
-                        sd[utf8.char(0)] = __um:EncodeCFrame(CFrame.new(oPos,tPos))
-                        sd[utf8.char(1)] = __um:EncodeCFrame(CFrame.new(tPos))
-                        sd[utf8.char(2)] = ap
-                        sd[utf8.char(3)] = __um:EncodeCFrame(tCF2:ToObjectSpace(CFrame.new(tPos+Vector3.new(math.random(-1,1)*0.5, math.random(-1,1)*0.5, math.random(-1,1)*0.5))))
-                        if sd.Hitbox then sd.Hitbox = WB.hitPart == "Head" and "Head" or "Body" end
-                    end)
-                end
+                pcall(function()
+                    sd[utf8.char(0)] = __um:EncodeCFrame(CFrame.new(oPos,tPos))
+                    sd[utf8.char(1)] = __um:EncodeCFrame(CFrame.new(tPos))
+                    sd[utf8.char(2)] = ap
+                    sd[utf8.char(3)] = __um:EncodeCFrame(tCF2:ToObjectSpace(CFrame.new(tPos+Vector3.new(math.random(-1,1)*0.5, math.random(-1,1)*0.5, math.random(-1,1)*0.5))))
+                    if sd.Hitbox then sd.Hitbox = WB.hitPart == "Head" and "Head" or "Body" end
+                end)
                 self.task1 = task.delay(0.15, function() self:desyncStop() end)
                 return table.unpack(results)
             end)
@@ -1154,7 +1067,7 @@ WBMain:AddToggle('WBOn', {Text='Enable Wallbang', Default=false, Callback=functi
 end})
 WBMain:AddDropdown('WBPart', {Text='Hit Part', Values={"Head","Body"}, Default='Head', Callback=function(v) WB.hitPart = v end})
 
-local hsCfg  = {enabled=false, soundId="rbxassetid://4764109000", volume=1, pitch=1}
+local hsCfg = {enabled=false, soundId="rbxassetid://4764109000", volume=1, pitch=1}
 local hsConn = nil
 local function findVM()
     local r = nil
@@ -1207,7 +1120,7 @@ HSMain:AddSlider('HSPitch', {Text='Pitch', Default=10, Min=1, Max=30, Rounding=0
 end})
 
 local CamMain = Tabs.Camera:AddLeftGroupbox('Camera')
-local CamAdv  = Tabs.Camera:AddRightGroupbox('Sensitivity & VM')
+local CamAdv = Tabs.Camera:AddRightGroupbox('Sensitivity & VM')
 local fovChangerConn = nil
 
 CamMain:AddToggle('FovChanger', {Text='FOV Changer', Default=false, Callback=function(v)
@@ -1262,11 +1175,11 @@ CamAdv:AddToggle('SensOn', {Text='Override Sensitivity', Default=false, Callback
         sensConn = trackConn(RunService.RenderStepped:Connect(function()
             pcall(function()
                 if not CameraController then return end
-                CameraController._camera_sensitivity                       = Options.SensVal.Value/100
-                CameraController._camera_sensitivity_ads_multiplier        = Options.SensADS.Value/100
+                CameraController._camera_sensitivity = Options.SensVal.Value/100
+                CameraController._camera_sensitivity_ads_multiplier = Options.SensADS.Value/100
                 CameraController._camera_sensitivity_ads_multiplier_scoped = Options.SensScoped.Value/100
-                CameraController._camera_sensitivity_x                     = Options.SensX.Value/100
-                CameraController._camera_sensitivity_y                     = Options.SensY.Value/100
+                CameraController._camera_sensitivity_x = Options.SensX.Value/100
+                CameraController._camera_sensitivity_y = Options.SensY.Value/100
             end))
         else
             if sensConn then sensConn:Disconnect(); sensConn=nil end
@@ -1274,14 +1187,14 @@ CamAdv:AddToggle('SensOn', {Text='Override Sensitivity', Default=false, Callback
         end
     end
 })
-CamAdv:AddSlider('SensVal',    {Text='Sensitivity', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
-CamAdv:AddSlider('SensADS',    {Text='ADS',         Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
-CamAdv:AddSlider('SensScoped', {Text='Scoped',      Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
-CamAdv:AddSlider('SensX',      {Text='X Axis',      Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
-CamAdv:AddSlider('SensY',      {Text='Y Axis',      Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
+CamAdv:AddSlider('SensVal', {Text='Sensitivity', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
+CamAdv:AddSlider('SensADS', {Text='ADS', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
+CamAdv:AddSlider('SensScoped', {Text='Scoped', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
+CamAdv:AddSlider('SensX', {Text='X Axis', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
+CamAdv:AddSlider('SensY', {Text='Y Axis', Default=100, Min=1, Max=500, Rounding=0, Suffix='%', Callback=function(_) end})
 
 local vmConn = nil
-local vmCfg  = {x=0,y=0,z=0}
+local vmCfg = {x=0,y=0,z=0}
 CamAdv:AddToggle('VMOn', {Text='Custom Viewmodel', Default=false, Callback=function(v)
     if v then
         vmConn = trackConn(RunService.RenderStepped:Connect(function()
@@ -1297,13 +1210,13 @@ CamAdv:AddSlider('VMY', {Text='Y Offset', Default=0, Min=-50, Max=50, Rounding=0
 CamAdv:AddSlider('VMZ', {Text='Z Offset', Default=0, Min=-50, Max=50, Rounding=0, Suffix='x0.1', Callback=function(v) vmCfg.z=v*0.1 end})
 
 local lCfg = { primary=PRIMARY_WEAPONS[1], secondary=SECONDARY_WEAPONS[1], melee=MELEE_WEAPONS[1], utility=UTILITY_WEAPONS[1] }
-local MLoad  = Tabs.Misc:AddLeftGroupbox('Loadout')
+local MLoad = Tabs.Misc:AddLeftGroupbox('Loadout')
 local MQueue = Tabs.Misc:AddRightGroupbox('Queue & Vote')
 
-MLoad:AddDropdown('LPrimary',   {Text='Primary',   Values=PRIMARY_WEAPONS,   Default=PRIMARY_WEAPONS[1],   Callback=function(v) lCfg.primary   = v end})
+MLoad:AddDropdown('LPrimary', {Text='Primary', Values=PRIMARY_WEAPONS, Default=PRIMARY_WEAPONS[1], Callback=function(v) lCfg.primary = v end})
 MLoad:AddDropdown('LSecondary', {Text='Secondary', Values=SECONDARY_WEAPONS, Default=SECONDARY_WEAPONS[1], Callback=function(v) lCfg.secondary = v end})
-MLoad:AddDropdown('LMelee',     {Text='Melee',     Values=MELEE_WEAPONS,     Default=MELEE_WEAPONS[1],     Callback=function(v) lCfg.melee     = v end})
-MLoad:AddDropdown('LUtility',   {Text='Utility',   Values=UTILITY_WEAPONS,   Default=UTILITY_WEAPONS[1],   Callback=function(v) lCfg.utility   = v end})
+MLoad:AddDropdown('LMelee', {Text='Melee', Values=MELEE_WEAPONS, Default=MELEE_WEAPONS[1], Callback=function(v) lCfg.melee = v end})
+MLoad:AddDropdown('LUtility', {Text='Utility', Values=UTILITY_WEAPONS, Default=UTILITY_WEAPONS[1], Callback=function(v) lCfg.utility = v end})
 MLoad:AddButton({Text='Apply Loadout', Func=function()
     pcall(function() PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility}); notify("Loadout","Applied!") end)
 end})
@@ -1316,7 +1229,7 @@ lp.CharacterAdded:Connect(function()
     end
 end)
 
-MQueue:AddDropdown('QMode',  {Text='Queue Mode', Values=QUEUE_MODES, Default='1v1', Callback=function(_) end})
+MQueue:AddDropdown('QMode', {Text='Queue Mode', Values=QUEUE_MODES, Default='1v1', Callback=function(_) end})
 MQueue:AddButton({Text='Join Queue', Func=function()
     pcall(function() local m = Options.QMode.Value; QueueRemote:InvokeServer(m); notify("Queue","Joined "..m.."!") end)
 end})
@@ -1339,19 +1252,15 @@ MQueue:AddToggle('AutoVote', {Text='Auto Vote', Default=false, Callback=function
 end})
 
 local origSky = nil
-local skyOn   = false
-local function getSky()  return ws.Terrain:FindFirstChildOfClass("Sky") end
+local skyOn = false
+local function getSky() return ws.Terrain:FindFirstChildOfClass("Sky") end
 local function getAtmo() return ws.Terrain:FindFirstChildOfClass("Atmosphere") end
 
 local function saveSky()
     if origSky then return end
     local sky = getSky()
     if not sky then return end
-    origSky = {
-        SkyboxBk=sky.SkyboxBk,SkyboxDn=sky.SkyboxDn,
-        SkyboxFt=sky.SkyboxFt,SkyboxLf=sky.SkyboxLf,
-        SkyboxRt=sky.SkyboxRt,SkyboxUp=sky.SkyboxUp,
-    }
+    origSky = {SkyboxBk=sky.SkyboxBk,SkyboxDn=sky.SkyboxDn,SkyboxFt=sky.SkyboxFt,SkyboxLf=sky.SkyboxLf,SkyboxRt=sky.SkyboxRt,SkyboxUp=sky.SkyboxUp}
 end
 
 local function applySky(name)
@@ -1410,16 +1319,16 @@ local function spoofDevice(deviceType)
     if not SetControlsRemote then notify("Device Spoofer","Remote not found!",3); return end
     local ok, err = pcall(function() SetControlsRemote:FireServer(targetDevice) end)
     if ok then notify("Device Spoofer","Spoofed to: "..deviceType,3)
-    else  notify("Device Spoofer","Failed: "..tostring(err),3) end
+    else notify("Device Spoofer","Failed: "..tostring(err),3) end
 end
 
 DevMain:AddLabel('Spoof your input device type')
 DevMain:AddDropdown('DeviceType', {Text='Device Type', Values=DEVICE_TYPES, Default='Computer', Callback=function(_) end})
-DevMain:AddButton({Text='Spoof Device',   Func=function() spoofDevice(Options.DeviceType.Value) end})
+DevMain:AddButton({Text='Spoof Device', Func=function() spoofDevice(Options.DeviceType.Value) end})
 DevMain:AddButton({Text='Spoof Computer', Func=function() spoofDevice("Computer") end})
-DevMain:AddButton({Text='Spoof Mobile',   Func=function() spoofDevice("Mobile")   end})
-DevMain:AddButton({Text='Spoof Console',  Func=function() spoofDevice("Console")  end})
-DevMain:AddButton({Text='Spoof VR',       Func=function() spoofDevice("VR")       end})
+DevMain:AddButton({Text='Spoof Mobile', Func=function() spoofDevice("Mobile") end})
+DevMain:AddButton({Text='Spoof Console', Func=function() spoofDevice("Console") end})
+DevMain:AddButton({Text='Spoof VR', Func=function() spoofDevice("VR") end})
 
 local cooldownCfg = {enabled=false, warHornOnly=false, loopActive=false, loopInterval=2}
 
@@ -1435,13 +1344,13 @@ local function setFastCooldowns()
         if ok and gc then
             for _, v in pairs(gc) do
                 if type(v) == "table" then
-                    if rawget(v,"AttackCooldown")      then rawset(v,"AttackCooldown",      0.001) end
-                    if rawget(v,"UseDelay")            then rawset(v,"UseDelay",            0.001) end
-                    if rawget(v,"SpinCooldown")        then rawset(v,"SpinCooldown",        0.001) end
-                    if rawget(v,"Cooldown")            then rawset(v,"Cooldown",            0.001) end
-                    if rawget(v,"HeavyAttackCooldown") then rawset(v,"HeavyAttackCooldown", 0.001) end
-                    if rawget(v,"AbilityCooldown")     then rawset(v,"AbilityCooldown",     0.001) end
-                    if rawget(v,"FireCooldown")        then rawset(v,"FireCooldown",        0.001) end
+                    if rawget(v,"AttackCooldown") then rawset(v,"AttackCooldown",0.001) end
+                    if rawget(v,"UseDelay") then rawset(v,"UseDelay",0.001) end
+                    if rawget(v,"SpinCooldown") then rawset(v,"SpinCooldown",0.001) end
+                    if rawget(v,"Cooldown") then rawset(v,"Cooldown",0.001) end
+                    if rawget(v,"HeavyAttackCooldown") then rawset(v,"HeavyAttackCooldown",0.001) end
+                    if rawget(v,"AbilityCooldown") then rawset(v,"AbilityCooldown",0.001) end
+                    if rawget(v,"FireCooldown") then rawset(v,"FireCooldown",0.001) end
                 end
             end
         end
@@ -1589,37 +1498,41 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
             _silentTarget = nil
         end
     end
+    
+    -- Wrapped in pcall so if CameraController methods change, it doesn't crash
     if AB.on and isKeybindActive("Aimbot") and CameraController then
-        if abDoReact then
-            abReactT -= dt
-            if abReactT <= 0 then abDoReact = false end
-        end
-        if not abDoReact then
-            if abTgt and not abTgtValid(abTgt) then abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
-            if not abTgt then
-                abTgt = _targetCache
-                if abTgt then abLockT=0;abDoReact=true;abReactT=AB.reactTime/1000;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
+        pcall(function()
+            if abDoReact then
+                abReactT -= dt
+                if abReactT <= 0 then abDoReact = false end
             end
-            if abTgt then
-                abLockT += dt
-                if abLockT > AB.maxLock then
-                    abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                elseif inFov(abTgt, abEffFov()) then
-                    pcall(function()
+            if not abDoReact then
+                if abTgt and not abTgtValid(abTgt) then abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
+                if not abTgt then
+                    abTgt = _targetCache
+                    if abTgt then abLockT=0;abDoReact=true;abReactT=AB.reactTime/1000;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
+                end
+                if abTgt then
+                    abLockT += dt
+                    if abLockT > AB.maxLock then
+                        abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
+                    elseif inFov(abTgt, abEffFov()) then
                         local aimPos = getPredictedPos(abTgt)
-                        local du     = (aimPos - cam.CFrame.Position).Unit
-                        local tRot   = Vector2.new(math.asin(math.clamp(du.Y,-1,1)), math.atan2(-du.X,-du.Z))
-                        local cur   = CameraController.Rotation
+                        local du = (aimPos - cam.CFrame.Position).Unit
+                        local tRot = Vector2.new(math.asin(math.clamp(du.Y,-1,1)), math.atan2(-du.X,-du.Z))
+                        local cur = CameraController.Rotation
                         local sp, _ = cam:WorldToViewportPoint(aimPos)
-                        local sd    = (Vector2.new(sp.X,sp.Y) - scr()).Magnitude
+                        local sd = (Vector2.new(sp.X,sp.Y) - scr()).Magnitude
                         local newRot = applySmartLock(tRot, cur, dt, sd, abEffFov())
-                        CameraController:ApplyRotationDelta(Vector2.new(newRot.X - cur.X, angDiff(cur.Y, newRot.Y)))
-                    end)
-                else
-                    abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
+                        if CameraController.ApplyRotationDelta then
+                            CameraController:ApplyRotationDelta(Vector2.new(newRot.X - cur.X, angDiff(cur.Y, newRot.Y)))
+                        end
+                    else
+                        abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
+                    end
                 end
             end
-        end
+        end)
     else
         if abTgt then abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
     end
@@ -1633,7 +1546,7 @@ trackConn(RunService.RenderStepped:Connect(function()
         local center = fovCfg.useCenter and scr() or getMouse()
         fovCircle.Visible, fovCircle.Color, fovCircle.Position = true, fovCfg.color, center
         local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-        local orig   = myRoot and myRoot.Position or cam.CFrame.Position
+        local orig = myRoot and myRoot.Position or cam.CFrame.Position
         fovCircle.Radius = (abTgt and isVis(orig,abTgt)) and fovCfg.onTarget or (abTgt and fovCfg.onBarrier) or fovCfg.fovSize
         if fovCfg.half then
             fovHalf.Visible, fovHalf.Color, fovHalf.Position, fovHalf.Radius = true, fovCfg.color, center, fovCircle.Radius * 0.5
