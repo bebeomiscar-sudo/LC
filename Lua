@@ -147,13 +147,14 @@ local function safeWait(parent, name, timeout)
     return ok and result or nil
 end
 
-local Controllers       = safeWait(lp.PlayerScripts, "Controllers", 10)
-local CameraController  = safeRequire(safeWait(Controllers, "CameraController",  10))
+-- Updated Module Loading with safety checks
+local Controllers       = safeWait(lp:WaitForChild("PlayerScripts"), "Controllers", 10)
+local CameraController  = safeRequire(safeWait(Controllers, "CameraController", 10))
 local FighterController = safeRequire(safeWait(Controllers, "FighterController", 10))
 local Modules           = safeWait(ReplicatedStorage, "Modules", 10)
-local util              = safeRequire(safeWait(Modules, "Utility",     10))
+local util              = safeRequire(safeWait(Modules, "Utility", 10))
 local enums             = safeRequire(safeWait(Modules, "EnumLibrary", 10))
-local GunModule         = safeRequire(lp.PlayerScripts.Modules.ItemTypes.Gun)
+local GunModule         = safeRequire(safeWait(safeWait(lp:WaitForChild("PlayerScripts"), "Modules", 10), "ItemTypes") and lp.PlayerScripts.Modules.ItemTypes:FindFirstChild("Gun") or nil)
 local DebugController   = safeRequire(safeWait(Controllers, "DebugController", 10))
 
 pcall(function()
@@ -709,7 +710,7 @@ local function hitpartfromname(character, partname)
 end
 
 local function rageShoot(targetChar)
-    if not util or not enums or not UseItemRemote then return end
+    if not util or not enums or not UseItemRemote then notify("Ragebot", "Missing game modules!", 3); return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
     local oid = lf.EquippedItem:Get("ObjectID")
@@ -973,7 +974,7 @@ local function trigGetCrosshairTarget()
 end
 
 local function trigShoot(targetChar)
-    if not util or not enums or not UseItemRemote then return end
+    if not util or not enums or not UseItemRemote then notify("Triggerbot", "Missing game modules!", 3); return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
     local oid = lf.EquippedItem:Get("ObjectID")
