@@ -42,13 +42,16 @@ local old_setmetatable; old_setmetatable = hookfunction(getrenv().setmetatable, 
     return old_setmetatable(t, mt)
 end))
 
-local old_kick; old_kick = hookfunction(game.Kick, newcclosure(function(self, ...)
-    local args = {...}
-    if #args == 0 then
-        error("Kick: 1 argument expected", 2)
-    end
-    return true
-end))
+-- Safe Kick hook (wrapped in pcall so it never crashes the script)
+pcall(function()
+    local old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
+        local args = {...}
+        if #args == 0 then
+            error("Kick: 1 argument expected", 2)
+        end
+        return true -- block actual kicks
+    end))
+end)
 
 -- LOADER
 
@@ -1560,8 +1563,7 @@ CamMain:AddToggle('FovChanger', {
                     if CameraController then
                         CameraController._base_fov = Options.FovVal.Value
                     end
-                end)
-            end))
+                end))
         else
             if fovChangerConn then fovChangerConn:Disconnect(); fovChangerConn=nil end
             pcall(function()
@@ -1593,8 +1595,7 @@ CamMain:AddToggle('NoShake', {
                         CameraController._shake_enabled = false
                         CameraController.ShakeCFrame    = CFrame.identity
                     end
-                end)
-            end))
+                end))
         else
             if noShakeConn then noShakeConn:Disconnect(); noShakeConn=nil end
             pcall(function() if CameraController then CameraController._shake_enabled=true end end)
@@ -1613,8 +1614,7 @@ CamMain:AddToggle('NoSway', {
                         CameraController._sway_spring.Value  = Vector2.zero
                         CameraController._sway_spring.Target = Vector2.zero
                     end
-                end)
-            end))
+                end))
         else
             if noSwayConn then noSwayConn:Disconnect(); noSwayConn=nil end
         end
@@ -1634,8 +1634,7 @@ CamMain:AddToggle('NoBob', {
                         CameraController._bobbing_value_spring.Target = 0
                         CameraController._bobbing_value_spring.Value  = 0
                     end
-                end)
-            end))
+                end))
         else
             if noBobConn then noBobConn:Disconnect(); noBobConn=nil end
         end
@@ -1653,8 +1652,7 @@ CamMain:AddToggle('NoJump', {
                         CameraController._jump_spring.Target = 0
                         CameraController._jump_spring.Value  = 0
                     end
-                end)
-            end))
+                end))
         else
             if noJumpConn then noJumpConn:Disconnect(); noJumpConn=nil end
         end
@@ -1672,8 +1670,7 @@ CamMain:AddToggle('NoSlide', {
                         CameraController._sliding_spring.Target = 0
                         CameraController._sliding_spring.Value  = 0
                     end
-                end)
-            end))
+                end))
         else
             if noSlideConn then noSlideConn:Disconnect(); noSlideConn=nil end
         end
@@ -1688,8 +1685,7 @@ CamMain:AddToggle('ForceCross', {
             crossConn = trackConn(RunService.RenderStepped:Connect(function()
                 pcall(function()
                     if CameraController then CameraController._crosshair_disabled=false end
-                end)
-            end))
+                end))
         else
             if crossConn then crossConn:Disconnect(); crossConn=nil end
             pcall(function() if CameraController then CameraController:_UpdateSettings() end end)
@@ -1710,8 +1706,7 @@ CamAdv:AddToggle('SensOn', {
                     CameraController._camera_sensitivity_ads_multiplier_scoped = Options.SensScoped.Value/100
                     CameraController._camera_sensitivity_x                     = Options.SensX.Value/100
                     CameraController._camera_sensitivity_y                     = Options.SensY.Value/100
-                end)
-            end))
+                end))
         else
             if sensConn then sensConn:Disconnect(); sensConn=nil end
             pcall(function() if CameraController then CameraController:_UpdateSettings() end end)
@@ -1736,8 +1731,7 @@ CamAdv:AddToggle('VMOn', {
                         CameraController.ViewModelOffsetCFrame =
                             CFrame.new(vmCfg.x, vmCfg.y, vmCfg.z)
                     end
-                end)
-            end))
+                end))
         else
             if vmConn then vmConn:Disconnect(); vmConn=nil end
             pcall(function()
@@ -1833,8 +1827,8 @@ MQueue:AddToggle('AutoVote', {
 local origSky = nil
 local skyOn   = false
 
-local function getSky()  return ws.Terrain:FindFirstChildOfClass("Sky") end
-local function getAtmo() return ws.Terrain:FindFirstChildOfClass("Atmosphere") end
+local function getSky()  return ws.Terrain:FindFirstChildOfClass("Sky") or Lighting:FindFirstChildOfClass("Sky") end
+local function getAtmo() return ws.Terrain:FindFirstChildOfClass("Atmosphere") or Lighting:FindFirstChildOfClass("Atmosphere") end
 
 local function saveSky()
     if origSky then return end
@@ -1852,7 +1846,10 @@ local function applySky(name)
     if not data then return end
     saveSky()
     local sky = getSky()
-    if not sky then sky=Instance.new("Sky"); sky.Parent=ws.Terrain end
+    if not sky then
+        sky = Instance.new("Sky")
+        sky.Parent = Lighting
+    end
     sky.SkyboxBk=data.SkyboxBk; sky.SkyboxDn=data.SkyboxDn
     sky.SkyboxFt=data.SkyboxFt; sky.SkyboxLf=data.SkyboxLf
     sky.SkyboxRt=data.SkyboxRt; sky.SkyboxUp=data.SkyboxUp
