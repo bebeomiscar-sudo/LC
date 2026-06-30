@@ -3,54 +3,57 @@
 -- Fixed: rageRunning stuck state, Watermark infinite loop, Stats ping safe access, WBState hook guard, RenderStepped performance
 -- New: Ragebot "On Player" direct mode, Improved Silent Aim, Device Spoofer, Fast Cooldowns, War Horn zero cooldown
 
--- AC BYPASS PRE-LOADER
-local ReplicatedFirst = game:GetService("ReplicatedFirst")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local function KillAntiCheat()
-    local script = ReplicatedFirst:FindFirstChild("LocalScript3")
-    if script then
-        script.Disabled = true
-        script:Destroy()
-    end
-end
-
-KillAntiCheat()
-
-task.spawn(function()
-    task.wait(0.1)
-    KillAntiCheat()
-    task.wait(0.5)
-    KillAntiCheat()
-end)
-
-local descendantConn
-descendantConn = ReplicatedFirst.DescendantAdded:Connect(function(child)
-    if child.Name == "LocalScript3" and child:IsA("LocalScript") then
-        child.Disabled = true
-        child:Destroy()
-    end
-end)
-
-local old_setmetatable; old_setmetatable = hookfunction(getrenv().setmetatable, newcclosure(function(t, mt)
-    if typeof(mt) == "table" and rawget(mt, "__mode") == "kv" then
-        if typeof(t) == "table" and #t == 4 and t[2] == 1 and t[3] == "String" then
-            return old_setmetatable({{}, 1, "String"}, { __mode = "kv" })
-        end
-    end
-    return old_setmetatable(t, mt)
-end))
-
--- Safe Kick hook (wrapped in pcall so it never crashes the script)
+-- AC BYPASS PRE-LOADER (Crash Proof)
 pcall(function()
-    local old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
-        local args = {...}
-        if #args == 0 then
-            error("Kick: 1 argument expected", 2)
+    local ReplicatedFirst = game:GetService("ReplicatedFirst")
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+
+    local function KillAntiCheat()
+        local script = ReplicatedFirst:FindFirstChild("LocalScript3")
+        if script then
+            script.Disabled = true
+            script:Destroy()
         end
-        return true -- block actual kicks
-    end))
+    end
+
+    KillAntiCheat()
+
+    task.spawn(function()
+        task.wait(0.1)
+        KillAntiCheat()
+        task.wait(0.5)
+        KillAntiCheat()
+    end)
+
+    local descendantConn
+    descendantConn = ReplicatedFirst.DescendantAdded:Connect(function(child)
+        if child.Name == "LocalScript3" and child:IsA("LocalScript") then
+            child.Disabled = true
+            child:Destroy()
+        end
+    end)
+
+    if hookfunction and getrenv then
+        local old_setmetatable; old_setmetatable = hookfunction(getrenv().setmetatable, newcclosure(function(t, mt)
+            if typeof(mt) == "table" and rawget(mt, "__mode") == "kv" then
+                if typeof(t) == "table" and #t == 4 and t[2] == 1 and t[3] == "String" then
+                    return old_setmetatable({{}, 1, "String"}, { __mode = "kv" })
+                end
+            end
+            return old_setmetatable(t, mt)
+        end))
+    end
+
+    if hookfunction then
+        local old_kick = hookfunction(LocalPlayer.Kick, newcclosure(function(self, ...)
+            local args = {...}
+            if #args == 0 then
+                error("Kick: 1 argument expected", 2)
+            end
+            return true
+        end))
+    end
 end)
 
 -- LOADER
@@ -178,13 +181,13 @@ end
 
 -- MODULE REFERENCES
 
-local Controllers       = safeWait(lp.PlayerScripts, "Controllers", 10)
+local Controllers       = safeWait(lp:WaitForChild("PlayerScripts"), "Controllers", 10)
 local CameraController  = safeRequire(safeWait(Controllers, "CameraController", 10))
 local FighterController = safeRequire(safeWait(Controllers, "FighterController", 10))
 local Modules           = safeWait(ReplicatedStorage, "Modules", 10)
 local util              = safeRequire(safeWait(Modules, "Utility", 10))
 local enums             = safeRequire(safeWait(Modules, "EnumLibrary", 10))
-local GunModule         = safeRequire(lp.PlayerScripts.Modules.ItemTypes.Gun)
+local GunModule         = safeRequire(lp:WaitForChild("PlayerScripts"):WaitForChild("Modules"):WaitForChild("ItemTypes"):FindFirstChild("Gun"))
 local DebugController   = safeRequire(safeWait(Controllers, "DebugController", 10))
 
 -- REMOTES
