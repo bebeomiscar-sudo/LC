@@ -1,112 +1,48 @@
--- =============================================
---   Rivals Hub v2.4
---   UI: LinoriaLib (bebeomiscar-sudo Modded)
---   AC Bypass: Pre-loader
---   New: Ragebot (Hide/Attack/Attempts)
---   New: Ragebot Status Drawing
---   New: Triggerbot
---   New: Keybind system (Hold/Toggle)
---   New: AC Bypass pre-loader
--- =============================================
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
--- =============================================
---   AC BYPASS — RUNS FIRST BEFORE EVERYTHING
--- =============================================
-
-do
-    -- CameraSecurity scans getfenv for hookfunction
-    pcall(function()
-        if not getfenv or not hookfunction then return end
-        local oldGetfenv = getfenv
-        hookfunction(getfenv, function(level)
-            local env = oldGetfenv(level or 1)
-            if type(env) == "table" then
-                local safeEnv = {}
-                for k, v in pairs(env) do
-                    if k ~= "hookfunction"
-                    and k ~= "newcclosure"
-                    and k ~= "getgc"
-                    and k ~= "getupvalue"
-                    and k ~= "setupvalue"
-                    and k ~= "decompile"
-                    and k ~= "syn"
-                    and k ~= "SENTINEL_GLOBALS" then
-                        safeEnv[k] = v
-                    end
-                end
-                return safeEnv
-            end
-            return env
-        end)
-        print("[AC Bypass] getfenv hooked — hookfunction hidden")
-    end)
-
-    -- ✅ BYPASS 2: Fix Kick() hook detection
-    -- AC does pcall(game:Kick()) — if succeeds = hooked
-    -- We make it error on no-arg calls like vanilla
-    pcall(function()
-        if not hookfunction then return end
-        local lp = game:GetService("Players").LocalPlayer
-        if not lp then return end
-        local ok = pcall(function()
-            lp:Kick()
-        end)
-        if ok then
-            hookfunction(lp.Kick, function(self, msg)
-                if self == lp and not msg then
-                    error("Kick requires a message")
-                end
-            end)
-            print("[AC Bypass] Kick() hook detection fixed")
-        end
-    end)
-
-    -- AC uses weak table to detect GetMouse() being stored
-    -- We override GetMouse to never hold strong reference
-    pcall(function()
-        local lp = game:GetService("Players").LocalPlayer
-        if not lp then return end
-        local oldGetMouse = lp.GetMouse
-        lp.GetMouse = function(self)
-            local mouse = oldGetMouse(self)
-            local proxy = newproxy and newproxy(true) or {}
-            local mt = type(proxy) == "userdata"
-                and getmetatable(proxy)
-                or setmetatable(proxy, {}) and getmetatable(proxy)
-            mt.__index = function(_, key)
-                local m = oldGetMouse(self)
-                local val = m[key]
-                m = nil
-                return val
-            end
-            mt.__newindex = function(_, key, val)
-                local m = oldGetMouse(self)
-                m[key] = val
-                m = nil
-            end
-            mouse = nil
-            return proxy
-        end
-        print("[AC Bypass] Mouse reference fix applied")
-    end)
-
-    -- Just leave it alone — its a distraction module
-    -- Our script never requires it
-
-    local function runSafetyCheck()
-        local envOk = true
-        pcall(function()
-            local env = getfenv and getfenv(1)
-            if env and env.hookfunction then
-                envOk = false
-            end
-        end)
-    print("[AC Bypass] Rivals bypass loaded — pre-loader complete")
+local function KillAntiCheat()
+    local script = ReplicatedFirst:FindFirstChild("LocalScript3")
+    if script then
+        script.Disabled = true
+        script:Destroy()
+    end
 end
 
--- =============================================
---   LOADER
--- =============================================
+KillAntiCheat()
+
+task.spawn(function()
+    task.wait(0.1)
+    KillAntiCheat()
+    task.wait(0.5)
+    KillAntiCheat()
+end)
+
+local descendantConn
+descendantConn = ReplicatedFirst.DescendantAdded:Connect(function(child)
+    if child.Name == "LocalScript3" and child:IsA("LocalScript") then
+        child.Disabled = true
+        child:Destroy()
+    end
+end)
+
+local old_setmetatable; old_setmetatable = hookfunction(getrenv().setmetatable, newcclosure(function(t, mt)
+    if typeof(mt) == "table" and rawget(mt, "__mode") == "kv" then
+        if typeof(t) == "table" and #t == 4 and t[2] == 1 and t[3] == "String" then
+            return old_setmetatable({{}, 1, "String"}, { __mode = "kv" })
+        end
+    end
+    return old_setmetatable(t, mt)
+end))
+
+local old_kick; old_kick = hookfunction(game.Kick, newcclosure(function(self, ...)
+    local args = {...}
+    if #args == 0 then
+        error("Kick: 1 argument expected", 2)
+    end
+    return true
+end))
 
 local cloneref = cloneref or function(s) return s end
 
@@ -123,7 +59,6 @@ local function FetchWithRetry(url, attempts)
         if ok and type(result) == 'string' and #result > 0 then
             return result
         end
-        warn(('[Rivals] Fetch failed (%d/%d) for %s'):format(i, attempts, url))
         task.wait(0.6 * i)
     end
     return nil
@@ -134,26 +69,20 @@ local function FetchFirstWorking(urls, attemptsPerUrl)
         local result = FetchWithRetry(url, attemptsPerUrl)
         if result then return result, url end
     end
-    error('[Rivals] All URLs failed:\n' .. table.concat(urls, '\n'))
+    error('[Rivals] All URLs failed')
 end
 
 local function LoadModule(fullUrlOrList, label)
     local urls = type(fullUrlOrList) == 'table' and fullUrlOrList or { fullUrlOrList }
-    local source, usedUrl = FetchFirstWorking(urls, 3)
-    local chunk, err = loadstring(source, label)
-    if not chunk then
-        error('[Rivals] Compile error in ' .. label .. ': ' .. tostring(err))
-    end
+    local source = FetchFirstWorking(urls, 3)
+    local chunk = loadstring(source, label)
+    if not chunk then error('[Rivals] Compile error in ' .. label) end
     return chunk()
 end
 
-local Library      = LoadModule(myRepoCandidates,                          'Library.lua')
-local ThemeManager = LoadModule(linoriaRepo .. 'addons/ThemeManager.lua',  'ThemeManager.lua')
-local SaveManager  = LoadModule(linoriaRepo .. 'addons/SaveManager.lua',   'SaveManager.lua')
-
--- =============================================
---   Services
--- =============================================
+local Library      = LoadModule(myRepoCandidates, 'Library.lua')
+local ThemeManager = LoadModule(linoriaRepo .. 'addons/ThemeManager.lua', 'ThemeManager.lua')
+local SaveManager  = LoadModule(linoriaRepo .. 'addons/SaveManager.lua', 'SaveManager.lua')
 
 local Players           = cloneref(game:GetService("Players"))
 local RunService        = cloneref(game:GetService("RunService"))
@@ -164,10 +93,6 @@ local Lighting          = cloneref(game:GetService("Lighting"))
 local ws                = cloneref(game:GetService("Workspace"))
 local lp                = Players.LocalPlayer
 local cam               = ws.CurrentCamera
-
--- =============================================
---   CONNECTION REGISTRY
--- =============================================
 
 local _connections = {}
 local function trackConn(c)
@@ -183,12 +108,8 @@ local function cleanupAll()
     _connections = {}
 end
 
--- =============================================
---   WINDOW
--- =============================================
-
 local Window = Library:CreateWindow({
-    Title        = 'Rivals Hub v2.4',
+    Title        = 'Rivals Hub',
     Center       = true,
     AutoShow     = true,
     TabPadding   = 8,
@@ -211,21 +132,9 @@ local Tabs = {
     UISettings  = Window:AddTab('UI Settings'),
 }
 
--- =============================================
---   NOTIFY HELPER
--- =============================================
-
 local function notify(title, desc, dur)
-    Library:Notify({
-        Title    = title,
-        Content  = desc,
-        Duration = dur or 2,
-    })
+    Library:Notify({ Title = title, Content = desc, Duration = dur or 2 })
 end
-
--- =============================================
---   Safe Require / WaitForChild
--- =============================================
 
 local function safeRequire(path)
     local ok, r = pcall(require, path)
@@ -234,15 +143,9 @@ end
 
 local function safeWait(parent, name, timeout)
     if not parent then return nil end
-    local ok, result = pcall(function()
-        return parent:WaitForChild(name, timeout)
-    end)
+    local ok, result = pcall(function() return parent:WaitForChild(name, timeout) end)
     return ok and result or nil
 end
-
--- =============================================
---   Module References
--- =============================================
 
 local Controllers       = safeWait(lp.PlayerScripts, "Controllers", 10)
 local CameraController  = safeRequire(safeWait(Controllers, "CameraController",  10))
@@ -257,21 +160,13 @@ pcall(function()
     if DebugController then DebugController:SetHandicapsEnabled(true) end
 end)
 
--- =============================================
---   Remotes
--- =============================================
-
-local RB            = ReplicatedStorage:WaitForChild("Remotes",       10)
+local RB            = ReplicatedStorage:WaitForChild("Remotes", 10)
 local RBF           = RB:WaitForChild("Replication", 10):WaitForChild("Fighter", 10)
-local UseItemRemote = RBF:WaitForChild("UseItem",     10)
+local UseItemRemote = RBF:WaitForChild("UseItem", 10)
 local PickWeaponsRemote = RBF:WaitForChild("PickWeapons", 10)
-local VoteRemote    = RB:WaitForChild("Duels",        10):WaitForChild("Vote",      10)
-local QueueRemote   = RB:WaitForChild("Matchmaking",  10):WaitForChild("JoinQueue", 10)
+local VoteRemote    = RB:WaitForChild("Duels", 10):WaitForChild("Vote", 10)
+local QueueRemote   = RB:WaitForChild("Matchmaking", 10):WaitForChild("JoinQueue", 10)
 local SetControlsRemote = RBF:FindFirstChild("SetControls")
-
--- =============================================
---   Lists
--- =============================================
 
 local PRIMARY_WEAPONS = {
     "Distortion","Permafrost","Energy Rifle","Flamethrower",
@@ -374,47 +269,23 @@ local COOLDOWN_FIELDS = {
 }
 local WAR_HORN_KEYS = {["War Horn"]=true,["WarHorn"]=true}
 
--- =============================================
---   KEYBIND SYSTEM
---   Empty = always active when toggled
---   Keybind set = hold OR toggle mode
--- =============================================
-
 local keyBindStates = {}
--- Stores: { key=KeyCode/nil, mode="Hold"/"Toggle", active=bool }
-
 local function makeKeybind(id)
-    keyBindStates[id] = {
-        key    = nil,
-        mode   = "Hold",
-        active = false,
-        held   = false,
-    }
+    keyBindStates[id] = { key = nil, mode = "Hold", active = false, held = false }
 end
 
 local function isKeybindActive(id)
     local kb = keyBindStates[id]
     if not kb then return true end
-    -- No key set = always active
     if not kb.key then return true end
-    if kb.mode == "Hold" then
-        return kb.held
-    else
-        -- Toggle mode
-        return kb.active
-    end
+    if kb.mode == "Hold" then return kb.held else return kb.active end
 end
 
--- Global input handler for all keybinds
 trackConn(UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     for id, kb in pairs(keyBindStates) do
         if kb.key and input.KeyCode == kb.key then
-            if kb.mode == "Hold" then
-                kb.held = true
-            else
-                kb.active = not kb.active
-            end
+            if kb.mode == "Hold" then kb.held = true else kb.active = not kb.active end
         end
     end
 end))
@@ -422,16 +293,10 @@ end))
 trackConn(UserInputService.InputEnded:Connect(function(input)
     for id, kb in pairs(keyBindStates) do
         if kb.key and input.KeyCode == kb.key then
-            if kb.mode == "Hold" then
-                kb.held = false
-            end
+            if kb.mode == "Hold" then kb.held = false end
         end
     end
 end))
-
--- =============================================
---   Helpers
--- =============================================
 
 local function bPart(char, s)
     local pr = PMAP[s] or {"Head"}
@@ -449,13 +314,8 @@ local function bPart(char, s)
     end
 end
 
-local function scr()
-    return Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-end
-
-local function getMouse()
-    return UserInputService:GetMouseLocation()
-end
+local function scr() return Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2) end
+local function getMouse() return UserInputService:GetMouseLocation() end
 
 local function sameTm(p)
     local r = false
@@ -513,61 +373,23 @@ local function isValidTarget(player)
     return true
 end
 
--- =============================================
---   TARGET CACHE
--- =============================================
-
-local _targetCache     = nil
-local _targetCacheTime = 0
+local _targetCache, _targetCacheTime = nil, 0
 local TARGET_CACHE_TTL = 0.05
-
-local function invalidateCache()
-    _targetCache     = nil
-    _targetCacheTime = 0
-end
-
--- =============================================
---   AIMBOT
--- =============================================
+local function invalidateCache() _targetCache, _targetCacheTime = nil, 0 end
 
 local AB = {
-    on            = false,
-    part          = "Head",
-    team          = true,
-    vis           = true,
-    fov           = 150,
-    dynFov        = false,
-    lockMode      = "Soft",
-    curvePct      = 10,
-    speed         = 1.0,
-    speedAttack   = 1.0,
-    speedScaleFov = 50,
-    maxLock       = 3.0,
-    reactTime     = 100,
-    useCenter     = false,
+    on=false, part="Head", team=true, vis=true, fov=150, dynFov=false,
+    lockMode="Soft", curvePct=10, speed=1.0, speedAttack=1.0, speedScaleFov=50,
+    maxLock=3.0, reactTime=100, useCenter=false,
 }
-
 makeKeybind("Aimbot")
 
-local abTgt           = nil
-local abLockT         = 0
-local abReactT        = 0
-local abDoReact       = false
-local abPrevPos       = nil
-local abPrevTick      = 0
-local abCurveProgress = 0
-local abCurveStart    = nil
+local abTgt, abLockT, abReactT, abDoReact, abPrevPos, abPrevTick, abCurveProgress, abCurveStart = nil,0,0,false,nil,0,0,nil
 
 local abCirc = Drawing.new("Circle")
-abCirc.NumSides  = 64
-abCirc.Filled    = false
-abCirc.Color     = Color3.fromRGB(255,255,255)
-abCirc.Thickness = 1.5
-abCirc.Visible   = false
+abCirc.NumSides, abCirc.Filled, abCirc.Color, abCirc.Thickness, abCirc.Visible = 64, false, Color3.fromRGB(255,255,255), 1.5, false
 
-local function abEffFov()
-    return AB.dynFov and AB.fov * (cam.FieldOfView/70) or AB.fov
-end
+local function abEffFov() return AB.dynFov and AB.fov * (cam.FieldOfView/70) or AB.fov end
 
 local function abTgtValid(pt)
     if not pt or not pt.Parent then return false end
@@ -584,7 +406,7 @@ end
 
 local function abFind()
     local center = AB.useCenter and scr() or getMouse()
-    local fv     = abEffFov()
+    local fv = abEffFov()
     local best, bd = nil, fv
     for _, p in ipairs(Players:GetPlayers()) do
         if p == lp then continue end
@@ -612,83 +434,52 @@ local function getPredictedPos(pt)
         local vel = (pos - abPrevPos) / (now - abPrevTick)
         pos = pos + vel * (0.08 * AB.speedAttack)
     end
-    abPrevPos  = pt.Position
-    abPrevTick = now
+    abPrevPos, abPrevTick = pt.Position, now
     return pos
 end
 
 local function applySmartLock(tRot, cur, dt, sd, fr)
     local df = AB.speed
     if fr > 0 then
-        df = AB.speed + (AB.speedScaleFov/100)
-            * (1 - math.clamp(sd/fr,0,1))
-            * math.max(AB.speedAttack - AB.speed,0)
+        df = AB.speed + (AB.speedScaleFov/100) * (1 - math.clamp(sd/fr,0,1)) * math.max(AB.speedAttack - AB.speed,0)
     end
     local eff = math.clamp(df, 0.01, 5)
     local fac = math.clamp(eff * dt * 6, 0, 1)
     if AB.lockMode ~= "Curve" then
-        return Vector2.new(
-            cur.X + (tRot.X - cur.X) * fac,
-            cur.Y + angDiff(cur.Y, tRot.Y) * fac
-        )
+        return Vector2.new(cur.X + (tRot.X - cur.X) * fac, cur.Y + angDiff(cur.Y, tRot.Y) * fac)
     end
     local dist2 = math.sqrt((tRot.X-cur.X)^2 + angDiff(cur.Y,tRot.Y)^2)
     if abCurveStart == nil or dist2 > 0.5 then
-        abCurveStart    = cur
-        abCurveProgress = 0
+        abCurveStart, abCurveProgress = cur, 0
     end
     local sp2 = (AB.curvePct/100) * 3 * eff
     abCurveProgress = math.clamp(abCurveProgress + sp2*dt, 0, 1)
-    local c  = abCurveProgress^2 * (3 - 2*abCurveProgress)
+    local c = abCurveProgress^2 * (3 - 2*abCurveProgress)
     local nP = abCurveStart.X + (tRot.X - abCurveStart.X) * c
     local nY = abCurveStart.Y + angDiff(abCurveStart.Y, tRot.Y) * c
-    if abCurveProgress >= 1 then
-        abCurveStart    = nil
-        abCurveProgress = 0
-    end
+    if abCurveProgress >= 1 then abCurveStart, abCurveProgress = nil, 0 end
     return Vector2.new(nP, nY)
 end
-
--- =============================================
---   AIMBOT UI
--- =============================================
 
 local ABMain = Tabs.Aimbot:AddLeftGroupbox('Aimbot')
 local ABAdv  = Tabs.Aimbot:AddRightGroupbox('Advanced')
 local ABKey  = Tabs.Aimbot:AddLeftGroupbox('Keybind')
 
-ABMain:AddToggle('AimbotOn', {
-    Text='Enable Aimbot', Default=false,
-    Callback=function(v)
-        AB.on = v
-        if not v then
-            abTgt=nil;abLockT=0;abDoReact=false
-            abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-            invalidateCache()
-        end
-        notify('Aimbot', v and 'Active!' or 'Off')
-    end
-})
+ABMain:AddToggle('AimbotOn', { Text='Enable Aimbot', Default=false, Callback=function(v)
+    AB.on = v
+    if not v then abTgt=nil;abLockT=0;abDoReact=false;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0;invalidateCache() end
+    notify('Aimbot', v and 'Active!' or 'Off')
+end})
 ABMain:AddToggle('AimbotTeam',   {Text='Team Check',    Default=true,  Callback=function(v) AB.team      = v end})
 ABMain:AddToggle('AimbotVis',    {Text='Visible Check', Default=true,  Callback=function(v) AB.vis       = v end})
 ABMain:AddToggle('AimbotCenter', {Text='Screen Center', Default=false, Callback=function(v) AB.useCenter = v end})
 ABMain:AddToggle('AimbotDynFov', {Text='Dynamic FOV',   Default=false, Callback=function(v) AB.dynFov    = v end})
-ABMain:AddDropdown('AimbotPart', {
-    Text='Aim Part', Values=PARTS, Default='Head',
-    Callback=function(v) AB.part = v end
-})
-ABMain:AddDropdown('AimbotMode', {
-    Text='Lock Mode', Values={'Soft','Magnet','Curve'}, Default='Soft',
-    Callback=function(v)
-        AB.lockMode = v
-        abCurveStart = nil
-        abCurveProgress = 0
-    end
-})
-ABMain:AddSlider('AimbotFov', {
-    Text='FOV Size', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px',
-    Callback=function(v) AB.fov=v; abCirc.Radius=v end
-})
+ABMain:AddDropdown('AimbotPart', {Text='Aim Part', Values=PARTS, Default='Head', Callback=function(v) AB.part = v end})
+ABMain:AddDropdown('AimbotMode', {Text='Lock Mode', Values={'Soft','Magnet','Curve'}, Default='Soft', Callback=function(v)
+    AB.lockMode = v; abCurveStart = nil; abCurveProgress = 0
+end})
+ABMain:AddSlider('AimbotFov', {Text='FOV Size', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) AB.fov=v; abCirc.Radius=v end})
+
 ABAdv:AddSlider('AimbotSpd',      {Text='Speed',          Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speed        = v/100 end})
 ABAdv:AddSlider('AimbotAtkSpd',   {Text='Attack Speed',   Default=100, Min=1, Max=500, Rounding=0, Suffix='x0.01', Callback=function(v) AB.speedAttack  = v/100 end})
 ABAdv:AddSlider('AimbotSpdScale', {Text='Speed Scale FOV',Default=50,  Min=0, Max=100, Rounding=0, Suffix='%',     Callback=function(v) AB.speedScaleFov= v     end})
@@ -696,58 +487,20 @@ ABAdv:AddSlider('AimbotCurve',    {Text='Curve',          Default=10,  Min=1, Ma
 ABAdv:AddSlider('AimbotMaxLock',  {Text='Max Lock',       Default=300, Min=1, Max=1000,Rounding=0, Suffix='x0.01s',Callback=function(v) AB.maxLock      = v/100 end})
 ABAdv:AddSlider('AimbotReact',    {Text='Reaction',       Default=100, Min=0, Max=500, Rounding=0, Suffix='ms',    Callback=function(v) AB.reactTime    = v     end})
 
--- Keybind UI for Aimbot
-ABKey:AddDropdown('AimbotKeyMode', {
-    Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold',
-    Callback=function(v)
-        keyBindStates["Aimbot"].mode   = v
-        keyBindStates["Aimbot"].active = false
-        keyBindStates["Aimbot"].held   = false
-    end
-})
-ABKey:AddKeyPicker('AimbotKey', {
-    Text    = 'Aimbot Key',
-    Default = 'None',
-    -- Empty = always active
-    Callback = function(v)
-        if v == Enum.KeyCode.Unknown then
-            keyBindStates["Aimbot"].key = nil
-        else
-            keyBindStates["Aimbot"].key = v
-        end
-    end
-})
+ABKey:AddDropdown('AimbotKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
+    keyBindStates["Aimbot"].mode, keyBindStates["Aimbot"].active, keyBindStates["Aimbot"].held = v, false, false
+end})
+ABKey:AddKeyPicker('AimbotKey', {Text='Aimbot Key', Default='None', Callback=function(v)
+    keyBindStates["Aimbot"].key = (v == Enum.KeyCode.Unknown and nil or v)
+end})
 ABKey:AddLabel('Empty key = always active')
 
--- =============================================
---   FOV CIRCLES
--- =============================================
-
-local fovCfg = {
-    visible   = true,
-    half      = false,
-    color     = Color3.fromRGB(255,255,255),
-    fovSize   = 150,
-    onTarget  = 60,
-    onBarrier = 200,
-    useCenter = false,
-}
-
+local fovCfg = { visible=true, half=false, color=Color3.fromRGB(255,255,255), fovSize=150, onTarget=60, onBarrier=200, useCenter=false }
 local fovCircle = Drawing.new("Circle")
-fovCircle.Visible   = false
-fovCircle.Thickness = 1.5
-fovCircle.Color     = Color3.fromRGB(255,255,255)
-fovCircle.Filled    = false
-fovCircle.NumSides  = 64
-fovCircle.Radius    = 150
+fovCircle.Visible, fovCircle.Thickness, fovCircle.Color, fovCircle.Filled, fovCircle.NumSides, fovCircle.Radius = false, 1.5, Color3.fromRGB(255,255,255), false, 64, 150
 
 local fovHalf = Drawing.new("Circle")
-fovHalf.Visible   = false
-fovHalf.Thickness = 1
-fovHalf.Color     = Color3.fromRGB(255,255,255)
-fovHalf.Filled    = false
-fovHalf.NumSides  = 32
-fovHalf.Radius    = 75
+fovHalf.Visible, fovHalf.Thickness, fovHalf.Color, fovHalf.Filled, fovHalf.NumSides, fovHalf.Radius = false, 1, Color3.fromRGB(255,255,255), false, 32, 75
 
 local FOVMain = Tabs.Visuals:AddLeftGroupbox('Aimbot FOV')
 local FOVSil  = Tabs.Visuals:AddRightGroupbox('Silent FOV')
@@ -755,57 +508,26 @@ local FOVSil  = Tabs.Visuals:AddRightGroupbox('Silent FOV')
 FOVMain:AddToggle('FovVisible', {Text='Show FOV Circle', Default=true,  Callback=function(v) fovCfg.visible   = v end})
 FOVMain:AddToggle('FovHalf',    {Text='Half Circle',     Default=false, Callback=function(v) fovCfg.half      = v end})
 FOVMain:AddToggle('FovCenter',  {Text='Screen Center',   Default=false, Callback=function(v) fovCfg.useCenter = v end})
-FOVMain:AddLabel('FOV Color'):AddColorPicker('FovColor', {
-    Default=Color3.fromRGB(255,255,255),
-    Callback=function(v) fovCfg.color = v end
-})
+FOVMain:AddLabel('FOV Color'):AddColorPicker('FovColor', {Default=Color3.fromRGB(255,255,255), Callback=function(v) fovCfg.color = v end})
 FOVMain:AddSlider('FovRadius',    {Text='FOV Radius', Default=150, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.fovSize=v; AB.fov=v; fovCircle.Radius=v; abCirc.Radius=v end})
 FOVMain:AddSlider('FovOnTarget',  {Text='On Target',  Default=60,  Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.onTarget  = v end})
 FOVMain:AddSlider('FovOnBarrier', {Text='On Barrier', Default=200, Min=10, Max=500, Rounding=0, Suffix=' px', Callback=function(v) fovCfg.onBarrier = v end})
 
--- =============================================
---   SILENT AIM
--- =============================================
-
-local silentCfg = {
-    enabled       = false,
-    hitChance     = 100,
-    prediction    = 0,
-    visCheck      = true,
-    useCenter     = false,
-    fovSize       = 150,
-    maxDist       = 200,
-    part          = "Head",
-    circleVisible = true,
-    circleColor   = Color3.fromRGB(0,200,255),
-    circleThick   = 1.5,
-    targetColor   = Color3.fromRGB(255,50,50),
-}
-
+local silentCfg = { enabled=false, hitChance=100, prediction=0, visCheck=true, useCenter=false, fovSize=150, maxDist=200, part="Head", circleVisible=true, circleColor=Color3.fromRGB(0,200,255), circleThick=1.5, targetColor=Color3.fromRGB(255,50,50) }
 makeKeybind("SilentAim")
 
 local silentCircle = Drawing.new("Circle")
-silentCircle.Thickness = 1.5
-silentCircle.Filled    = false
-silentCircle.NumSides  = 64
-silentCircle.Visible   = false
-silentCircle.Radius    = 150
-silentCircle.Color     = Color3.fromRGB(0,200,255)
+silentCircle.Thickness, silentCircle.Filled, silentCircle.NumSides, silentCircle.Visible, silentCircle.Radius, silentCircle.Color = 1.5, false, 64, false, 150, Color3.fromRGB(0,200,255)
 
-local _silentTarget = nil
-local silentHooked  = false
-local silentOldFunc = nil
+local _silentTarget, silentHooked, silentOldFunc = nil, false, nil
 
 local function fetchEntities()
     local entities = {}
     for _, v in pairs(ws:GetChildren()) do
-        if v:FindFirstChildOfClass("Humanoid") then
-            table.insert(entities, v)
+        if v:FindFirstChildOfClass("Humanoid") then table.insert(entities, v)
         elseif v.Name == "HurtEffect" then
             for _, child in pairs(v:GetChildren()) do
-                if child.ClassName ~= "Highlight" then
-                    table.insert(entities, child)
-                end
+                if child.ClassName ~= "Highlight" then table.insert(entities, child) end
             end
         end
     end
@@ -816,8 +538,7 @@ local function fetchNearest(part)
     local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
     local target, dist = nil, math.huge
     for _, entity in pairs(fetchEntities()) do
-        if entity == lp.Character then continue end
-        if not entity:FindFirstChild("HumanoidRootPart") then continue end
+        if entity == lp.Character or not entity:FindFirstChild("HumanoidRootPart") then continue end
         local hum = entity:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then continue end
         local hitPart = entity:FindFirstChild(part or silentCfg.part)
@@ -831,8 +552,7 @@ local function fetchNearest(part)
                 local orig   = myRoot and myRoot.Position or cam.CFrame.Position
                 if not isVis(orig, hitPart) then continue end
             end
-            dist   = mag
-            target = entity
+            dist, target = mag, entity
         end
     end
     return target
@@ -845,15 +565,10 @@ local function hookSilent()
         rawset(util,"__writeTest",true)
         rawset(util,"__writeTest",test)
     end)
-    if not writeOk then
-        notify("Silent Aim","Hook failed — frozen table",3)
-        return
-    end
+    if not writeOk then notify("Silent Aim","Hook failed — frozen table",3) return end
     silentOldFunc = util.Raycast
     util.Raycast = function(self, origin, direction, distance, ...)
-        if silentCfg.enabled
-        and isKeybindActive("SilentAim")
-        and math.random(1,100) <= silentCfg.hitChance then
+        if silentCfg.enabled and isKeybindActive("SilentAim") and math.random(1,100) <= silentCfg.hitChance then
             local aim  = fetchNearest(silentCfg.part)
             local node = aim and aim:FindFirstChild(silentCfg.part)
             if node then
@@ -876,21 +591,16 @@ end
 local function unhookSilent()
     if not silentHooked or not util then return end
     pcall(function() util.Raycast = silentOldFunc end)
-    silentOldFunc = nil
-    silentHooked  = false
+    silentOldFunc, silentHooked = nil, false
 end
 
 local SAMain = Tabs.SilentAim:AddLeftGroupbox('Silent Aim')
 local SAKey  = Tabs.SilentAim:AddRightGroupbox('Keybind')
 
-SAMain:AddToggle('SilentOn', {
-    Text='Enable Silent Aim', Default=false,
-    Callback=function(v)
-        silentCfg.enabled = v
-        if v then hookSilent(); notify("Silent Aim","Active!")
-        else unhookSilent(); notify("Silent Aim","Off") end
-    end
-})
+SAMain:AddToggle('SilentOn', {Text='Enable Silent Aim', Default=false, Callback=function(v)
+    silentCfg.enabled = v
+    if v then hookSilent(); notify("Silent Aim","Active!") else unhookSilent(); notify("Silent Aim","Off") end
+end})
 SAMain:AddToggle('SilentVis',    {Text='Visible Check', Default=true,  Callback=function(v) silentCfg.visCheck  = v end})
 SAMain:AddToggle('SilentCenter', {Text='Screen Center', Default=false, Callback=function(v) silentCfg.useCenter = v end})
 SAMain:AddDropdown('SilentPart', {Text='Target Part', Values=PARTS, Default='Head', Callback=function(v) silentCfg.part = v end})
@@ -899,126 +609,55 @@ SAMain:AddSlider('SilentPred',   {Text='Prediction',   Default=0,   Min=0,  Max=
 SAMain:AddSlider('SilentFov',    {Text='FOV',          Default=150, Min=10, Max=600,  Rounding=0, Suffix=' px',   Callback=function(v) silentCfg.fovSize=v; silentCircle.Radius=v end})
 SAMain:AddSlider('SilentDist',   {Text='Max Distance', Default=200, Min=10, Max=2000, Rounding=0, Suffix=' studs',Callback=function(v) silentCfg.maxDist = v end})
 
-FOVSil:AddToggle('SilentCircOn', {
-    Text='Show Circle', Default=true,
-    Callback=function(v) silentCfg.circleVisible=v; if not v then silentCircle.Visible=false end end
-})
-FOVSil:AddLabel('Normal Color'):AddColorPicker('SilentCircColor', {
-    Default=Color3.fromRGB(0,200,255), Callback=function(v) silentCfg.circleColor=v end
-})
-FOVSil:AddLabel('On Target Color'):AddColorPicker('SilentTargColor', {
-    Default=Color3.fromRGB(255,50,50), Callback=function(v) silentCfg.targetColor=v end
-})
+FOVSil:AddToggle('SilentCircOn', {Text='Show Circle', Default=true, Callback=function(v) silentCfg.circleVisible=v; if not v then silentCircle.Visible=false end end})
+FOVSil:AddLabel('Normal Color'):AddColorPicker('SilentCircColor', {Default=Color3.fromRGB(0,200,255), Callback=function(v) silentCfg.circleColor=v end})
+FOVSil:AddLabel('On Target Color'):AddColorPicker('SilentTargColor', {Default=Color3.fromRGB(255,50,50), Callback=function(v) silentCfg.targetColor=v end})
 FOVSil:AddSlider('SilentCircThick', {Text='Thickness', Default=15, Min=5,  Max=50,  Rounding=0, Suffix='x0.1',  Callback=function(v) silentCfg.circleThick=v*0.1; silentCircle.Thickness=v*0.1 end})
 FOVSil:AddSlider('SilentCircSegs',  {Text='Segments',  Default=64, Min=8,  Max=128, Rounding=0, Suffix=' sides',Callback=function(v) silentCircle.NumSides=v end})
 
--- Silent Aim Keybind UI
-SAKey:AddDropdown('SilentKeyMode', {
-    Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold',
-    Callback=function(v)
-        keyBindStates["SilentAim"].mode   = v
-        keyBindStates["SilentAim"].active = false
-        keyBindStates["SilentAim"].held   = false
-    end
-})
-SAKey:AddKeyPicker('SilentKey', {
-    Text='Silent Aim Key', Default='None',
-    Callback=function(v)
-        if v == Enum.KeyCode.Unknown then
-            keyBindStates["SilentAim"].key = nil
-        else
-            keyBindStates["SilentAim"].key = v
-        end
-    end
-})
+SAKey:AddDropdown('SilentKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
+    keyBindStates["SilentAim"].mode, keyBindStates["SilentAim"].active, keyBindStates["SilentAim"].held = v, false, false
+end})
+SAKey:AddKeyPicker('SilentKey', {Text='Silent Aim Key', Default='None', Callback=function(v)
+    keyBindStates["SilentAim"].key = (v == Enum.KeyCode.Unknown and nil or v)
+end})
 SAKey:AddLabel('Empty key = always active')
 
--- =============================================
---   RAGEBOT — Built From Scratch
---   UseItem + FighterController + Utility
---   Hide → void teleport desync
---   Attack → shoot after void
---   Shoot Attempts → 1-5
--- =============================================
-
 makeKeybind("Ragebot")
-
-local rageCfg = {
-    enabled        = false,
-    hitpart        = "Head",
-    shootAttempts  = 1,
-    hideRange      = 0.3,
-    attackRange    = 0.3,
-    teamCheck      = true,
-    maxDist        = 500,
-
-    -- On Player
-    onPlayerEnabled = false,
-    onPlayerTarget  = nil,
-    onPlayerPart    = "Head",
-    onPlayerDelay   = 0.1,
-}
-
--- Ragebot Performance Cache
-local ragePerf = {
-    lastAttackTick = 0,
-    killStartAt    = nil,
-    targetName     = "",
-    targetHP       = 0,
-    state          = "idle", -- idle / hiding / attacking
-}
-
--- Void snap state
+local rageCfg = { enabled=false, hitpart="Head", shootAttempts=1, hideRange=0.3, attackRange=0.3, teamCheck=true, maxDist=500, onPlayerEnabled=false, onPlayerTarget=nil, onPlayerPart="Head", onPlayerDelay=0.1 }
+local ragePerf = { lastAttackTick=0, killStartAt=nil, targetName="", targetHP=0, state="idle" }
 local vfrSnap = {cf=nil, lv=nil, av=nil}
-local function clrVoidSnap()
-    vfrSnap.cf, vfrSnap.lv, vfrSnap.av = nil, nil, nil
-end
-
+local function clrVoidSnap() vfrSnap.cf, vfrSnap.lv, vfrSnap.av = nil, nil, nil end
 local vfrLim, vfrDead = 2147483646, 1147483646
+
 local function rndSkip(mi, ma, dmi, dma)
     local val = math.random(mi, ma)
-    while val >= dmi and val <= dma do
-        val = math.random(mi, ma)
-    end
+    while val >= dmi and val <= dma do val = math.random(mi, ma) end
     return val
 end
 
-local function voidHrp()
-    local char = lp.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
+local function voidHrp() local char = lp.Character return char and char:FindFirstChild("HumanoidRootPart") end
 
--- Void snap bind
 RunService:BindToRenderStep("vfr_csync", Enum.RenderPriority.First.Value, function()
     if not vfrSnap.cf then return end
     local hrp = voidHrp()
     if not hrp then return end
     pcall(function()
-        hrp.CFrame                  = vfrSnap.cf
-        hrp.AssemblyLinearVelocity  = vfrSnap.lv
+        hrp.CFrame = vfrSnap.cf
+        hrp.AssemblyLinearVelocity = vfrSnap.lv
         hrp.AssemblyAngularVelocity = vfrSnap.av
     end)
 end)
 
 local function snapVoid(hrp)
     if not hrp then return end
-    vfrSnap.cf = hrp.CFrame
-    vfrSnap.lv = hrp.AssemblyLinearVelocity
-    vfrSnap.av = hrp.AssemblyAngularVelocity
+    vfrSnap.cf, vfrSnap.lv, vfrSnap.av = hrp.CFrame, hrp.AssemblyLinearVelocity, hrp.AssemblyAngularVelocity
     pcall(function()
         local lim, dead = vfrLim, vfrDead
-        local p = Vector3.new(
-            rndSkip(-lim,lim,-dead,dead),
-            rndSkip(-lim,lim,-dead,dead),
-            rndSkip(-lim,lim,-dead,dead)
-        )
-        local v = Vector3.new(
-            rndSkip(-lim,lim,-dead,dead),
-            rndSkip(-lim,lim,-dead,dead),
-            rndSkip(-lim,lim,-dead,dead)
-        )
-        hrp.CFrame                  = CFrame.new(p) * CFrame.Angles(math.pi,math.pi,math.pi)
-        hrp.AssemblyLinearVelocity  = v
+        local p = Vector3.new(rndSkip(-lim,lim,-dead,dead), rndSkip(-lim,lim,-dead,dead), rndSkip(-lim,lim,-dead,dead))
+        local v = Vector3.new(rndSkip(-lim,lim,-dead,dead), rndSkip(-lim,lim,-dead,dead), rndSkip(-lim,lim,-dead,dead))
+        hrp.CFrame = CFrame.new(p) * CFrame.Angles(math.pi,math.pi,math.pi)
+        hrp.AssemblyLinearVelocity = v
         hrp.AssemblyAngularVelocity = v
     end)
 end
@@ -1026,8 +665,7 @@ end
 local function rageValid(char)
     if not char or not char.Parent then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    if not char:FindFirstChild("HumanoidRootPart") then return false end
+    if not hum or hum.Health <= 0 or not char:FindFirstChild("HumanoidRootPart") then return false end
     local tp = Players:GetPlayerFromCharacter(char)
     if not tp then return false end
     if rageCfg.teamCheck and sameTm(tp) then return false end
@@ -1038,8 +676,7 @@ local function rageNearest()
     local cursor = getMouse()
     local best, bestd = nil, math.huge
     for _, p in Players:GetPlayers() do
-        if p == lp or not p.Character then continue end
-        if not rageValid(p.Character) then continue end
+        if p == lp or not p.Character or not rageValid(p.Character) then continue end
         local root = p.Character:FindFirstChild("HumanoidRootPart")
         if not root then continue end
         local sp, on = cam:WorldToViewportPoint(root.Position)
@@ -1065,57 +702,36 @@ local function hitpartfromname(character, partname)
         return closest or character:FindFirstChild("Head")
     elseif partname == "Random" then
         local parts = {"Head","HumanoidRootPart","UpperTorso"}
-        return character:FindFirstChild(parts[math.random(#parts)])
-            or character:FindFirstChild("Head")
+        return character:FindFirstChild(parts[math.random(#parts)]) or character:FindFirstChild("Head")
     else
-        return character:FindFirstChild(partname)
-            or character:FindFirstChild("Head")
+        return character:FindFirstChild(partname) or character:FindFirstChild("Head")
     end
 end
-
--- =============================================
---   RAGEBOT SHOOT — UseItem + Utility
--- =============================================
 
 local function rageShoot(targetChar)
     if not util or not enums or not UseItemRemote then return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
-    local item = lf.EquippedItem
-    local oid  = item:Get("ObjectID")
+    local oid = lf.EquippedItem:Get("ObjectID")
     if not oid then return end
-
     local hitPart = hitpartfromname(targetChar, rageCfg.hitpart)
     if not hitPart then return end
-
-    -- Get shoot origin
-    -- Use HRP position as origin for server-side hit
     local myChar = lp.Character
     local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
-
-    -- Use offset positions like the source
     local offsets = {
-        Vector3.new(0,  2, 0),
-        Vector3.new(0,  4, 0),
-        Vector3.new(0,  6, 0),
-        Vector3.new(2,  2, 0),
-        Vector3.new(-2, 2, 0),
-        Vector3.new(0,  2, 2),
+        Vector3.new(0,  2, 0), Vector3.new(0,  4, 0), Vector3.new(0,  6, 0),
+        Vector3.new(2,  2, 0), Vector3.new(-2, 2, 0), Vector3.new(0,  2, 2),
         Vector3.new(0,  2,-2),
     }
-
     local tPos = hitPart.Position
     local attempts = math.clamp(rageCfg.shootAttempts, 1, 5)
-
     for attempt = 1, attempts do
         local off = offsets[((attempt - 1) % #offsets) + 1]
         local shootOrigin = myHRP.Position + off
-
         local cf1 = CFrame.lookAt(shootOrigin, tPos)
         local cf2 = CFrame.lookAt(tPos, shootOrigin)
         local rel = hitPart.CFrame:ToObjectSpace(CFrame.new(tPos))
-
         local data = {
             [utf8.char(1)] = {
                 [utf8.char(0)] = util:EncodeCFrame(cf1),
@@ -1124,92 +740,43 @@ local function rageShoot(targetChar)
                 [utf8.char(3)] = util:EncodeCFrame(rel),
             },
         }
-
-        pcall(function()
-            UseItemRemote:FireServer(
-                oid,
-                enums:ToEnum("StartShooting"),
-                data,
-                nil
-            )
-        end)
+        pcall(function() UseItemRemote:FireServer(oid, enums:ToEnum("StartShooting"), data, nil) end)
     end
-
     ragePerf.lastAttackTick = tick()
 end
 
--- =============================================
---   RAGEBOT MAIN LOOP
---   Hide → snap to void
---   Attack → shoot → restore
--- =============================================
-
-local rageConn    = nil
-local rageRunning = false
-
+local rageConn, rageRunning = nil, false
 local function startRageLoop()
     if rageConn then rageConn:Disconnect(); rageConn=nil end
     rageRunning = false
-
     rageConn = trackConn(RunService.Heartbeat:Connect(function()
-        if not rageCfg.enabled then return end
-        if not isKeybindActive("Ragebot") then return end
-        if rageRunning then return end
-
+        if not rageCfg.enabled or not isKeybindActive("Ragebot") or rageRunning then return end
         local targetChar = rageNearest()
         if not targetChar or not rageValid(targetChar) then
-            ragePerf.state      = "idle"
-            ragePerf.targetName = ""
-            ragePerf.targetHP   = 0
+            ragePerf.state, ragePerf.targetName, ragePerf.targetHP = "idle", "", 0
             return
         end
-
         local tp = Players:GetPlayerFromCharacter(targetChar)
         local hum = targetChar:FindFirstChildOfClass("Humanoid")
         ragePerf.targetName = tp and tp.Name or "?"
-        ragePerf.targetHP   = hum and math.floor(hum.Health) or 0
-
+        ragePerf.targetHP = hum and math.floor(hum.Health) or 0
         local hrp = voidHrp()
         if not hrp then return end
-
         rageRunning = true
-
         task.spawn(function()
             local ok, err = pcall(function()
-                -- PHASE 1: HIDE — snap to void
                 ragePerf.state = "hiding"
                 snapVoid(hrp)
                 task.wait(rageCfg.hideRange)
-
-                -- Check target still valid after hide
-                if not rageValid(targetChar) then
-                    clrVoidSnap()
-                    ragePerf.state = "idle"
-                    return
-                end
-
-                -- PHASE 2: ATTACK — shoot from void
+                if not rageValid(targetChar) then clrVoidSnap(); ragePerf.state = "idle"; return end
                 ragePerf.state = "attacking"
-                if not isKeybindActive("Ragebot") then
-                    clrVoidSnap()
-                    ragePerf.state = "idle"
-                    return
-                end
-
+                if not isKeybindActive("Ragebot") then clrVoidSnap(); ragePerf.state = "idle"; return end
                 rageShoot(targetChar)
                 task.wait(rageCfg.attackRange)
-
-                -- PHASE 3: RESTORE position
                 clrVoidSnap()
                 ragePerf.state = "idle"
             end)
-
-            if not ok then
-                warn("[Ragebot] Error: "..tostring(err))
-                clrVoidSnap()
-                ragePerf.state = "idle"
-            end
-
+            if not ok then warn("[Ragebot] Error: "..tostring(err)); clrVoidSnap(); ragePerf.state = "idle" end
             rageRunning = false
         end)
     end))
@@ -1218,19 +785,10 @@ end
 local function stopRageLoop()
     if rageConn then rageConn:Disconnect(); rageConn=nil end
     clrVoidSnap()
-    rageRunning         = false
-    ragePerf.state      = "idle"
-    ragePerf.targetName = ""
-    ragePerf.targetHP   = 0
+    rageRunning, ragePerf.state, ragePerf.targetName, ragePerf.targetHP = false, "idle", "", 0
 end
 
--- =============================================
---   ON PLAYER MODE
--- =============================================
-
-local onPlayerConn    = nil
-local onPlayerRunning = false
-
+local onPlayerConn, onPlayerRunning = nil, false
 local function getPlayerNames()
     local names = {"None"}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -1245,8 +803,7 @@ local function rageGetPlayerByName(name)
             if not isValidTarget(p) then return nil,nil end
             local char = p.Character
             if not char then return nil,nil end
-            local part = bPart(char, rageCfg.onPlayerPart)
-                or char:FindFirstChild("Head")
+            local part = bPart(char, rageCfg.onPlayerPart) or char:FindFirstChild("Head")
             return part, char
         end
     end
@@ -1282,13 +839,7 @@ local function startOnPlayer()
                         [utf8.char(3)] = util:EncodeCFrame(rel),
                     },
                 }
-                pcall(function()
-                    UseItemRemote:FireServer(
-                        lf.EquippedItem:Get("ObjectID"),
-                        enums:ToEnum("StartShooting"),
-                        data, nil
-                    )
-                end)
+                pcall(function() UseItemRemote:FireServer(lf.EquippedItem:Get("ObjectID"), enums:ToEnum("StartShooting"), data, nil) end)
                 task.wait(rageCfg.onPlayerDelay)
             end)
             if not ok then warn("[OnPlayer] "..tostring(err)) end
@@ -1299,107 +850,49 @@ end
 
 local function stopOnPlayer()
     if onPlayerConn then onPlayerConn:Disconnect(); onPlayerConn=nil end
-    rageCfg.onPlayerEnabled = false
-    onPlayerRunning         = false
+    rageCfg.onPlayerEnabled, onPlayerRunning = false, false
 end
 
--- =============================================
---   RAGEBOT STATUS — Drawing Overlay
---   Our own — not from source
--- =============================================
-
-local rsStatusCfg = {
-    enabled  = false,
-    color    = Color3.fromRGB(235,235,235),
-    x        = 0,
-    y        = 40,
-    gap      = 16,
-}
-
+local rsStatusCfg = { enabled=false, color=Color3.fromRGB(235,235,235), x=0, y=40, gap=16 }
 local rsLine1 = Drawing.new("Text")
-rsLine1.Size        = 14
-rsLine1.Font        = 2
-rsLine1.Outline     = true
-rsLine1.Center      = true
-rsLine1.Visible     = false
-rsLine1.Color       = rsStatusCfg.color
+rsLine1.Size, rsLine1.Font, rsLine1.Outline, rsLine1.Center, rsLine1.Visible, rsLine1.Color = 14, 2, true, true, false, rsStatusCfg.color
 pcall(function() rsLine1.OutlineColor = Color3.fromRGB(0,0,0) end)
 
 local rsLine2 = Drawing.new("Text")
-rsLine2.Size        = 13
-rsLine2.Font        = 2
-rsLine2.Outline     = true
-rsLine2.Center      = true
-rsLine2.Visible     = false
-rsLine2.Color       = rsStatusCfg.color
+rsLine2.Size, rsLine2.Font, rsLine2.Outline, rsLine2.Center, rsLine2.Visible, rsLine2.Color = 13, 2, true, true, false, rsStatusCfg.color
 pcall(function() rsLine2.OutlineColor = Color3.fromRGB(0,0,0) end)
 
-local function rsAnchor()
-    return (cam.ViewportSize/2) + Vector2.new(rsStatusCfg.x, rsStatusCfg.y)
-end
-
+local function rsAnchor() return (cam.ViewportSize/2) + Vector2.new(rsStatusCfg.x, rsStatusCfg.y) end
 local function rsStateColor()
-    if ragePerf.state == "hiding" then
-        return Color3.fromRGB(255,200,0)
-    elseif ragePerf.state == "attacking" then
-        return Color3.fromRGB(255,50,50)
-    else
-        return rsStatusCfg.color
-    end
+    if ragePerf.state == "hiding" then return Color3.fromRGB(255,200,0)
+    elseif ragePerf.state == "attacking" then return Color3.fromRGB(255,50,50)
+    else return rsStatusCfg.color end
 end
 
 local function rsStateText()
-    if not rageCfg.enabled and not rageCfg.onPlayerEnabled then
-        return "ragebot: off", ""
-    end
-    if ragePerf.state == "hiding" then
-        return "ragebot: hiding", "teleporting to void"
+    if not rageCfg.enabled and not rageCfg.onPlayerEnabled then return "ragebot: off", "" end
+    if ragePerf.state == "hiding" then return "ragebot: hiding", "teleporting to void"
     elseif ragePerf.state == "attacking" then
         local name = ragePerf.targetName ~= "" and ragePerf.targetName or "target"
-        local hp   = ragePerf.targetHP
-        return "ragebot: attacking ("..name..")", hp.." hp"
+        return "ragebot: attacking ("..name..")", ragePerf.targetHP.." hp"
     else
-        if ragePerf.targetName ~= "" then
-            return "ragebot: ready", ragePerf.targetName.." — "..ragePerf.targetHP.." hp"
-        end
+        if ragePerf.targetName ~= "" then return "ragebot: ready", ragePerf.targetName.." — "..ragePerf.targetHP.." hp" end
         return "ragebot: idle", "no target"
     end
 end
 
 local function drawRageStatus()
-    if not rsStatusCfg.enabled then
-        rsLine1.Visible = false
-        rsLine2.Visible = false
-        return
-    end
-
+    if not rsStatusCfg.enabled then rsLine1.Visible, rsLine2.Visible = false, false return end
     local anchor = rsAnchor()
-    local col    = rsStateColor()
+    local col = rsStateColor()
     local line1, line2 = rsStateText()
-
-    rsLine1.Color    = col
-    rsLine1.Text     = line1
-    rsLine1.Position = anchor
-    rsLine1.Visible  = true
-
+    rsLine1.Color, rsLine1.Text, rsLine1.Position, rsLine1.Visible = col, line1, anchor, true
     if line2 ~= "" then
-        rsLine2.Color    = rsStatusCfg.color
-        rsLine2.Text     = line2
-        rsLine2.Position = anchor + Vector2.new(0, rsStatusCfg.gap)
-        rsLine2.Visible  = true
-    else
-        rsLine2.Visible = false
-    end
+        rsLine2.Color, rsLine2.Text, rsLine2.Position, rsLine2.Visible = rsStatusCfg.color, line2, anchor + Vector2.new(0, rsStatusCfg.gap), true
+    else rsLine2.Visible = false end
 end
 
-local function hideRageStatus()
-    rsLine1.Visible = false
-    rsLine2.Visible = false
-end
-
--- =============================================
---   RAGEBOT UI
--- =============================================
+local function hideRageStatus() rsLine1.Visible, rsLine2.Visible = false, false end
 
 local RGMain = Tabs.Ragebot:AddLeftGroupbox('Ragebot')
 local RGAdv  = Tabs.Ragebot:AddRightGroupbox('Advanced')
@@ -1407,208 +900,75 @@ local RGOnP  = Tabs.Ragebot:AddLeftGroupbox('On Player')
 local RGStat = Tabs.Ragebot:AddRightGroupbox('Status Display')
 local RGKey  = Tabs.Ragebot:AddLeftGroupbox('Keybind')
 
-RGMain:AddToggle('RageOn', {
-    Text='Enable Ragebot', Default=false,
-    Callback=function(v)
-        rageCfg.enabled = v
-        if v then startRageLoop(); notify("Ragebot","Active!")
-        else stopRageLoop(); notify("Ragebot","Off") end
-    end
-})
-RGMain:AddToggle('RageTeamCheck', {
-    Text='Team Check', Default=true,
-    Callback=function(v) rageCfg.teamCheck = v end
-})
-RGMain:AddDropdown('RageHitPart', {
-    Text='Hit Part',
-    Values={"Head","HumanoidRootPart","UpperTorso","Closest","Random"},
-    Default='Head',
-    Callback=function(v) rageCfg.hitpart = v end
-})
-RGMain:AddSlider('RageShootAttempts', {
-    Text='Shoot Attempts', Default=1, Min=1, Max=5, Rounding=0, Suffix='x',
-    Callback=function(v) rageCfg.shootAttempts = math.clamp(math.floor(v),1,5) end
-})
-RGMain:AddSlider('RageHideRange', {
-    Text='Hide Range', Default=3, Min=1, Max=30, Rounding=1, Suffix='x0.1s',
-    Callback=function(v) rageCfg.hideRange = v*0.1 end
-})
-RGMain:AddSlider('RageAttackRange', {
-    Text='Attack Range', Default=3, Min=1, Max=30, Rounding=1, Suffix='x0.1s',
-    Callback=function(v) rageCfg.attackRange = v*0.1 end
-})
-RGMain:AddSlider('RageMaxDist', {
-    Text='Max Distance', Default=500, Min=50, Max=3000, Rounding=0, Suffix=' studs',
-    Callback=function(v) rageCfg.maxDist = v end
-})
-RGMain:AddButton({
-    Text='Debug Target',
-    Func=function()
-        local t = rageNearest()
-        if t then
-            local p   = Players:GetPlayerFromCharacter(t)
-            local hum = t:FindFirstChildOfClass("Humanoid")
-            notify("Ragebot",
-                "Target: "..(p and p.Name or "?")
-                .." | HP: "..math.floor(hum and hum.Health or 0),4)
-        else
-            notify("Ragebot","No target found",3)
-        end
-    end
-})
+RGMain:AddToggle('RageOn', {Text='Enable Ragebot', Default=false, Callback=function(v)
+    rageCfg.enabled = v
+    if v then startRageLoop(); notify("Ragebot","Active!") else stopRageLoop(); notify("Ragebot","Off") end
+end})
+RGMain:AddToggle('RageTeamCheck', {Text='Team Check', Default=true, Callback=function(v) rageCfg.teamCheck = v end})
+RGMain:AddDropdown('RageHitPart', {Text='Hit Part', Values={"Head","HumanoidRootPart","UpperTorso","Closest","Random"}, Default='Head', Callback=function(v) rageCfg.hitpart = v end})
+RGMain:AddSlider('RageShootAttempts', {Text='Shoot Attempts', Default=1, Min=1, Max=5, Rounding=0, Suffix='x', Callback=function(v) rageCfg.shootAttempts = math.clamp(math.floor(v),1,5) end})
+RGMain:AddSlider('RageHideRange', {Text='Hide Range', Default=3, Min=1, Max=30, Rounding=1, Suffix='x0.1s', Callback=function(v) rageCfg.hideRange = v*0.1 end})
+RGMain:AddSlider('RageAttackRange', {Text='Attack Range', Default=3, Min=1, Max=30, Rounding=1, Suffix='x0.1s', Callback=function(v) rageCfg.attackRange = v*0.1 end})
+RGMain:AddSlider('RageMaxDist', {Text='Max Distance', Default=500, Min=50, Max=3000, Rounding=0, Suffix=' studs', Callback=function(v) rageCfg.maxDist = v end})
 
--- Advanced
-RGAdv:AddLabel('Hide = void teleport desync')
-RGAdv:AddLabel('Attack = shoot on return')
-RGAdv:AddLabel('Attempts = shots per cycle')
-RGAdv:AddDivider()
-RGAdv:AddLabel('Status colors:')
-RGAdv:AddLabel('Yellow = hiding')
-RGAdv:AddLabel('Red = attacking')
-RGAdv:AddLabel('White = idle/ready')
+RGOnP:AddToggle('RageOnPlayer', {Text='Enable On Player', Default=false, Callback=function(v)
+    rageCfg.onPlayerEnabled = v
+    if v then
+        if rageCfg.enabled then stopRageLoop(); rageCfg.enabled=false end
+        startOnPlayer()
+        notify("On Player","Active! → "..(rageCfg.onPlayerTarget or "None"))
+    else
+        stopOnPlayer()
+        notify("On Player","Off")
+    end
+end})
 
--- On Player
-RGOnP:AddToggle('RageOnPlayer', {
-    Text='Enable On Player', Default=false,
-    Callback=function(v)
-        rageCfg.onPlayerEnabled = v
-        if v then
-            if rageCfg.enabled then stopRageLoop(); rageCfg.enabled=false end
-            startOnPlayer()
-            notify("On Player","Active! → "..(rageCfg.onPlayerTarget or "None"))
-        else
-            stopOnPlayer()
-            notify("On Player","Off")
-        end
-    end
-})
+local onPlayerDropdown = RGOnP:AddDropdown('RageOnPlayerTarget', {Text='Target Player', Values=getPlayerNames(), Default='None', Callback=function(v)
+    rageCfg.onPlayerTarget = v
+    if rageCfg.onPlayerEnabled then notify("On Player","Now targeting: "..tostring(v),2) end
+end})
+RGOnP:AddDropdown('RageOnPlayerPart', {Text='Hit Part', Values=PARTS, Default='Head', Callback=function(v) rageCfg.onPlayerPart = v end})
+RGOnP:AddSlider('RageOnPlayerDelay', {Text='Shot Delay', Default=10, Min=1, Max=50, Rounding=0, Suffix='x0.01s', Callback=function(v) rageCfg.onPlayerDelay = v*0.01 end})
+RGOnP:AddButton({Text='Refresh Players', Func=function() pcall(function() onPlayerDropdown:SetValues(getPlayerNames()) end) notify("On Player","Refreshed!",2) end})
 
-local onPlayerDropdown = RGOnP:AddDropdown('RageOnPlayerTarget', {
-    Text='Target Player', Values=getPlayerNames(), Default='None',
-    Callback=function(v)
-        rageCfg.onPlayerTarget = v
-        if rageCfg.onPlayerEnabled then
-            notify("On Player","Now targeting: "..tostring(v),2)
-        end
-    end
-})
-RGOnP:AddDropdown('RageOnPlayerPart', {
-    Text='Hit Part', Values=PARTS, Default='Head',
-    Callback=function(v) rageCfg.onPlayerPart = v end
-})
-RGOnP:AddSlider('RageOnPlayerDelay', {
-    Text='Shot Delay', Default=10, Min=1, Max=50, Rounding=0, Suffix='x0.01s',
-    Callback=function(v) rageCfg.onPlayerDelay = v*0.01 end
-})
-RGOnP:AddButton({
-    Text='🔄 Refresh Players',
-    Func=function()
-        pcall(function() onPlayerDropdown:SetValues(getPlayerNames()) end)
-        notify("On Player","Refreshed!",2)
-    end
-})
-
--- Status Display
-RGStat:AddToggle('RageStatusOn', {
-    Text='Enable Status', Default=false,
-    Callback=function(v)
-        rsStatusCfg.enabled = v
-        if not v then hideRageStatus() end
-    end
-})
-RGStat:AddLabel('Status Color'):AddColorPicker('RageStatusColor', {
-    Default=Color3.fromRGB(235,235,235),
-    Callback=function(v)
-        rsStatusCfg.color = v
-        rsLine1.Color     = v
-        rsLine2.Color     = v
-    end
-})
+RGStat:AddToggle('RageStatusOn', {Text='Enable Status', Default=false, Callback=function(v) rsStatusCfg.enabled = v; if not v then hideRageStatus() end end})
+RGStat:AddLabel('Status Color'):AddColorPicker('RageStatusColor', {Default=Color3.fromRGB(235,235,235), Callback=function(v) rsStatusCfg.color = v; rsLine1.Color = v; rsLine2.Color = v end})
 
 local rageStatDep = RGStat:AddDependencyBox()
-rageStatDep:AddSlider('RageStatusX', {
-    Text='Offset X', Default=0, Min=-500, Max=500, Rounding=0,
-    Callback=function(v) rsStatusCfg.x = v end
-})
-rageStatDep:AddSlider('RageStatusY', {
-    Text='Offset Y', Default=40, Min=-500, Max=500, Rounding=0,
-    Callback=function(v) rsStatusCfg.y = v end
-})
-rageStatDep:AddSlider('RageStatusGap', {
-    Text='Line Gap', Default=16, Min=8, Max=40, Rounding=0, Suffix=' px',
-    Callback=function(v) rsStatusCfg.gap = v end
-})
+rageStatDep:AddSlider('RageStatusX', {Text='Offset X', Default=0, Min=-500, Max=500, Rounding=0, Callback=function(v) rsStatusCfg.x = v end})
+rageStatDep:AddSlider('RageStatusY', {Text='Offset Y', Default=40, Min=-500, Max=500, Rounding=0, Callback=function(v) rsStatusCfg.y = v end})
+rageStatDep:AddSlider('RageStatusGap', {Text='Line Gap', Default=16, Min=8, Max=40, Rounding=0, Suffix=' px', Callback=function(v) rsStatusCfg.gap = v end})
 rageStatDep:SetupDependencies({{Toggles.RageStatusOn, true}})
 
--- Keybind
-RGKey:AddDropdown('RageKeyMode', {
-    Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold',
-    Callback=function(v)
-        keyBindStates["Ragebot"].mode   = v
-        keyBindStates["Ragebot"].active = false
-        keyBindStates["Ragebot"].held   = false
-    end
-})
-RGKey:AddKeyPicker('RageKey', {
-    Text='Ragebot Key', Default='None',
-    Callback=function(v)
-        if v == Enum.KeyCode.Unknown then
-            keyBindStates["Ragebot"].key = nil
-        else
-            keyBindStates["Ragebot"].key = v
-        end
-    end
-})
+RGKey:AddDropdown('RageKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
+    keyBindStates["Ragebot"].mode, keyBindStates["Ragebot"].active, keyBindStates["Ragebot"].held = v, false, false
+end})
+RGKey:AddKeyPicker('RageKey', {Text='Ragebot Key', Default='None', Callback=function(v)
+    keyBindStates["Ragebot"].key = (v == Enum.KeyCode.Unknown and nil or v)
+end})
 RGKey:AddLabel('Empty key = always active')
 
--- =============================================
---   TRIGGERBOT
---   UseItem + FighterController + Utility
---   Fires when crosshair is on enemy
--- =============================================
-
 makeKeybind("Triggerbot")
-
-local trigCfg = {
-    enabled  = false,
-    delay    = 0.05,
-    hitpart  = "Head",
-    teamCheck = true,
-    fovSize  = 20,
-    visCheck = true,
-}
-
-local trigLastFire = 0
-local trigConn     = nil
+local trigCfg = { enabled=false, delay=0.05, hitpart="Head", teamCheck=true, fovSize=20, visCheck=true }
+local trigLastFire, trigConn = 0, nil
 
 local function trigGetCrosshairTarget()
-    -- Cast ray from screen center
     local center  = scr()
     local unitRay = cam:ScreenPointToRay(center.X, center.Y)
-    local origin  = unitRay.Origin
-    local dir     = unitRay.Direction * 1000
-
+    local origin, dir = unitRay.Origin, unitRay.Direction * 1000
     local rp = RaycastParams.new()
     rp.FilterType = Enum.RaycastFilterType.Exclude
     rp.FilterDescendantsInstances = {lp.Character}
-
     local result = ws:Raycast(origin, dir, rp)
     if not result or not result.Instance then return nil end
-
-    local hit = result.Instance
-    local char = hit:FindFirstAncestorOfClass("Model")
+    local hit, char = result.Instance, result.Instance:FindFirstAncestorOfClass("Model")
     if not char then return nil end
-
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return nil end
-
     local tp = Players:GetPlayerFromCharacter(char)
     if not tp or tp == lp then return nil end
     if trigCfg.teamCheck and sameTm(tp) then return nil end
-
-    -- Vis check
     if trigCfg.visCheck and not isVis(cam.CFrame.Position, hit) then return nil end
-
     return char
 end
 
@@ -1616,23 +976,17 @@ local function trigShoot(targetChar)
     if not util or not enums or not UseItemRemote then return end
     local lf = FighterController and FighterController.LocalFighter
     if not lf or not lf.EquippedItem then return end
-    local item = lf.EquippedItem
-    local oid  = item:Get("ObjectID")
+    local oid = lf.EquippedItem:Get("ObjectID")
     if not oid then return end
-
     local hitPart = hitpartfromname(targetChar, trigCfg.hitpart)
     if not hitPart then return end
-
     local myChar = lp.Character
     local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
-
     local shootOrigin = myHRP.Position + Vector3.new(0,2,0)
-    local tPos        = hitPart.Position
-    local cf1         = CFrame.lookAt(shootOrigin, tPos)
-    local cf2         = CFrame.lookAt(tPos, shootOrigin)
-    local rel         = hitPart.CFrame:ToObjectSpace(CFrame.new(tPos))
-
+    local tPos = hitPart.Position
+    local cf1, cf2 = CFrame.lookAt(shootOrigin, tPos), CFrame.lookAt(tPos, shootOrigin)
+    local rel = hitPart.CFrame:ToObjectSpace(CFrame.new(tPos))
     local data = {
         [utf8.char(1)] = {
             [utf8.char(0)] = util:EncodeCFrame(cf1),
@@ -1641,17 +995,13 @@ local function trigShoot(targetChar)
             [utf8.char(3)] = util:EncodeCFrame(rel),
         },
     }
-
-    pcall(function()
-        UseItemRemote:FireServer(oid, enums:ToEnum("StartShooting"), data, nil)
-    end)
+    pcall(function() UseItemRemote:FireServer(oid, enums:ToEnum("StartShooting"), data, nil) end)
 end
 
 local function startTriggerbot()
     if trigConn then trigConn:Disconnect(); trigConn=nil end
     trigConn = trackConn(RunService.Heartbeat:Connect(function()
-        if not trigCfg.enabled then return end
-        if not isKeybindActive("Triggerbot") then return end
+        if not trigCfg.enabled or not isKeybindActive("Triggerbot") then return end
         local now = tick()
         if now - trigLastFire < trigCfg.delay then return end
         local targetChar = trigGetCrosshairTarget()
@@ -1666,87 +1016,39 @@ local function stopTriggerbot()
     trigCfg.enabled = false
 end
 
--- =============================================
---   TRIGGERBOT UI
--- =============================================
-
 local TRGMain = Tabs.Triggerbot:AddLeftGroupbox('Triggerbot')
 local TRGKey  = Tabs.Triggerbot:AddRightGroupbox('Keybind')
 
-TRGMain:AddToggle('TrigOn', {
-    Text='Enable Triggerbot', Default=false,
-    Callback=function(v)
-        trigCfg.enabled = v
-        if v then startTriggerbot(); notify("Triggerbot","Active!")
-        else stopTriggerbot(); notify("Triggerbot","Off") end
-    end
-})
+TRGMain:AddToggle('TrigOn', {Text='Enable Triggerbot', Default=false, Callback=function(v)
+    trigCfg.enabled = v
+    if v then startTriggerbot(); notify("Triggerbot","Active!") else stopTriggerbot(); notify("Triggerbot","Off") end
+end})
 TRGMain:AddToggle('TrigTeam',   {Text='Team Check',    Default=true,  Callback=function(v) trigCfg.teamCheck = v end})
 TRGMain:AddToggle('TrigVis',    {Text='Visible Check', Default=true,  Callback=function(v) trigCfg.visCheck  = v end})
-TRGMain:AddDropdown('TrigPart', {
-    Text='Hit Part',
-    Values={"Head","HumanoidRootPart","UpperTorso","Closest","Random"},
-    Default='Head',
-    Callback=function(v) trigCfg.hitpart = v end
-})
-TRGMain:AddSlider('TrigDelay', {
-    Text='Fire Delay', Default=5, Min=1, Max=100, Rounding=0, Suffix='x0.01s',
-    Callback=function(v) trigCfg.delay = v*0.01 end
-})
-TRGMain:AddSlider('TrigFov', {
-    Text='Detection FOV', Default=20, Min=1, Max=200, Rounding=0, Suffix=' px',
-    Callback=function(v) trigCfg.fovSize = v end
-})
+TRGMain:AddDropdown('TrigPart', {Text='Hit Part', Values={"Head","HumanoidRootPart","UpperTorso","Closest","Random"}, Default='Head', Callback=function(v) trigCfg.hitpart = v end})
+TRGMain:AddSlider('TrigDelay', {Text='Fire Delay', Default=5, Min=1, Max=100, Rounding=0, Suffix='x0.01s', Callback=function(v) trigCfg.delay = v*0.01 end})
+TRGMain:AddSlider('TrigFov', {Text='Detection FOV', Default=20, Min=1, Max=200, Rounding=0, Suffix=' px', Callback=function(v) trigCfg.fovSize = v end})
 
--- Triggerbot Keybind
-TRGKey:AddDropdown('TrigKeyMode', {
-    Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold',
-    Callback=function(v)
-        keyBindStates["Triggerbot"].mode   = v
-        keyBindStates["Triggerbot"].active = false
-        keyBindStates["Triggerbot"].held   = false
-    end
-})
-TRGKey:AddKeyPicker('TrigKey', {
-    Text='Triggerbot Key', Default='None',
-    Callback=function(v)
-        if v == Enum.KeyCode.Unknown then
-            keyBindStates["Triggerbot"].key = nil
-        else
-            keyBindStates["Triggerbot"].key = v
-        end
-    end
-})
+TRGKey:AddDropdown('TrigKeyMode', {Text='Keybind Mode', Values={'Hold','Toggle'}, Default='Hold', Callback=function(v)
+    keyBindStates["Triggerbot"].mode, keyBindStates["Triggerbot"].active, keyBindStates["Triggerbot"].held = v, false, false
+end})
+TRGKey:AddKeyPicker('TrigKey', {Text='Triggerbot Key', Default='None', Callback=function(v)
+    keyBindStates["Triggerbot"].key = (v == Enum.KeyCode.Unknown and nil or v)
+end})
 TRGKey:AddLabel('Empty key = always active')
-
--- =============================================
---   WALLBANG
--- =============================================
 
 local WB = {enabled=false, hitPart="Head"}
 local wbState = {}
-
 do
-    local __gm = GunModule
-    local __um = util
-
+    local __gm, __um = GunModule, util
     function wbState:init()
-        self.active  = false
-        self.target  = nil
-        self.desync  = false
-        self.conn1   = nil
-        self.conn2   = nil
-        self.task1   = nil
-        self.oldfunc = nil
-        self.hooked  = false
+        self.active, self.target, self.desync, self.conn1, self.conn2, self.task1, self.oldfunc, self.hooked = false, nil, false, nil, nil, nil, nil, false
     end
-
     function wbState:find()
         local best, bd = nil, math.huge
         for _, p in next, Players:GetPlayers() do
-            if p == lp or not isValidTarget(p) then continue end
-            if p:GetAttribute("TeamID") == lp:GetAttribute("TeamID") then continue end
-            local c    = p.Character
+            if p == lp or not isValidTarget(p) or p:GetAttribute("TeamID") == lp:GetAttribute("TeamID") then continue end
+            local c = p.Character
             if not c then continue end
             local head = c:FindFirstChild("Head")
             local hum  = c:FindFirstChildWhichIsA("Humanoid")
@@ -1756,15 +1058,9 @@ do
         end
         return best
     end
-
     function wbState:getHitPart(char)
-        return WB.hitPart == "Head"
-            and char:FindFirstChild("Head")
-            or  char:FindFirstChild("UpperTorso")
-            or  char:FindFirstChild("Torso")
-            or  char:FindFirstChild("HumanoidRootPart")
+        return WB.hitPart == "Head" and char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
     end
-
     function wbState:desyncStart(tp2)
         if self.conn2 then self.conn2:Disconnect() end
         self.desync = true
@@ -1776,43 +1072,34 @@ do
             if not tc2 then self:desyncStop(); return end
             local h2  = tc2:FindFirstChild("Head")
             if not h2 then self:desyncStop(); return end
-            local sCF = root.CFrame
-            local sLV = root.AssemblyLinearVelocity
-            local sAV = root.AssemblyAngularVelocity
+            local sCF, sLV, sAV = root.CFrame, root.AssemblyLinearVelocity, root.AssemblyAngularVelocity
             root.CFrame = h2.CFrame * CFrame.new(0,-5,0)
             RunService:BindToRenderStep("__wbR", 101, function()
                 pcall(function()
-                    root.CFrame                  = sCF
-                    root.AssemblyLinearVelocity  = sLV
-                    root.AssemblyAngularVelocity = sAV
+                    root.CFrame, root.AssemblyLinearVelocity, root.AssemblyAngularVelocity = sCF, sLV, sAV
                 end)
                 RunService:UnbindFromRenderStep("__wbR")
             end)
         end)
     end
-
     function wbState:desyncStop()
         self.desync = false
         if self.conn2 then self.conn2:Disconnect(); self.conn2=nil end
     end
-
     function wbState:setup()
         if self.conn1 then self.conn1:Disconnect() end
         self.conn1 = RunService.Heartbeat:Connect(function()
             if not self.active then return end
             self.target = self:find()
         end)
-        if not __gm then return end
-        if self.hooked then return end
+        if not __gm or self.hooked then return end
         local origSS = __gm.StartShooting
         if not origSS then return end
         self.oldfunc = origSS
         local hookOk = pcall(function()
             rawset(__gm, "StartShooting", function(gSelf, ...)
                 local results = {origSS(gSelf, ...)}
-                if not gSelf.ClientFighter or not gSelf.ClientFighter.IsLocalPlayer then
-                    return table.unpack(results)
-                end
+                if not gSelf.ClientFighter or not gSelf.ClientFighter.IsLocalPlayer then return table.unpack(results) end
                 local sd = results[3]
                 if not sd or typeof(sd) ~= "table" then return table.unpack(results) end
                 results[4] = true
@@ -1823,44 +1110,28 @@ do
                 if self.task1 then task.cancel(self.task1); self.task1=nil end
                 local ap = self:getHitPart(tgP.Character)
                 if not ap then return table.unpack(results) end
-                local tPos = ap.Position
-                local tCF2 = ap.CFrame
+                local tPos, tCF2 = ap.Position, ap.CFrame
                 local oPos = tPos - Vector3.new(0,3,0)
                 if __um then
                     pcall(function()
                         sd[utf8.char(0)] = __um:EncodeCFrame(CFrame.new(oPos,tPos))
                         sd[utf8.char(1)] = __um:EncodeCFrame(CFrame.new(tPos))
                         sd[utf8.char(2)] = ap
-                        sd[utf8.char(3)] = __um:EncodeCFrame(tCF2:ToObjectSpace(
-                            CFrame.new(tPos+Vector3.new(
-                                math.random(-1,1)*0.5,
-                                math.random(-1,1)*0.5,
-                                math.random(-1,1)*0.5
-                            ))
-                        ))
-                        if sd.Hitbox then
-                            sd.Hitbox = WB.hitPart == "Head" and "Head" or "Body"
-                        end
+                        sd[utf8.char(3)] = __um:EncodeCFrame(tCF2:ToObjectSpace(CFrame.new(tPos+Vector3.new(math.random(-1,1)*0.5, math.random(-1,1)*0.5, math.random(-1,1)*0.5))))
+                        if sd.Hitbox then sd.Hitbox = WB.hitPart == "Head" and "Head" or "Body" end
                     end)
                 end
                 self.task1 = task.delay(0.15, function() self:desyncStop() end)
                 return table.unpack(results)
             end)
         end)
-        if hookOk then
-            self.hooked = true
-        else
-            warn("[Wallbang] Hook failed")
-            self.oldfunc = nil
-        end
+        if hookOk then self.hooked = true else warn("[Wallbang] Hook failed"); self.oldfunc = nil end
     end
-
     function wbState:Start()
         self.active = true
         self:setup()
         notify("Wallbang","Active!")
     end
-
     function wbState:Shutdown()
         self.active = false
         if self.conn1 then self.conn1:Disconnect(); self.conn1=nil end
@@ -1868,42 +1139,22 @@ do
         if self.task1 then task.cancel(self.task1); self.task1=nil end
         if self.hooked and self.oldfunc and __gm then
             pcall(function() rawset(__gm,"StartShooting",self.oldfunc) end)
-            self.oldfunc = nil
-            self.hooked  = false
+            self.oldfunc, self.hooked = nil, false
         end
         notify("Wallbang","Off")
     end
 end
 
 wbState:init()
-
 local WBMain = Tabs.Wallbang:AddLeftGroupbox('Wallbang')
-WBMain:AddToggle('WBOn', {
-    Text='Enable Wallbang', Default=false,
-    Callback=function(v)
-        WB.enabled = v
-        if v then wbState:Start() else wbState:Shutdown() end
-    end
-})
-WBMain:AddDropdown('WBPart', {
-    Text='Hit Part', Values={"Head","Body"}, Default='Head',
-    Callback=function(v) WB.hitPart = v end
-})
-WBMain:AddButton({
-    Text='Debug Target',
-    Func=function()
-        local tg = wbState:find()
-        notify("Wallbang", tg and "Target: "..tg.Name or "No target", 3)
-    end
-})
-
--- =============================================
---   HIT SOUND
--- =============================================
+WBMain:AddToggle('WBOn', {Text='Enable Wallbang', Default=false, Callback=function(v)
+    WB.enabled = v
+    if v then wbState:Start() else wbState:Shutdown() end
+end})
+WBMain:AddDropdown('WBPart', {Text='Hit Part', Values={"Head","Body"}, Default='Head', Callback=function(v) WB.hitPart = v end})
 
 local hsCfg  = {enabled=false, soundId="rbxassetid://4764109000", volume=1, pitch=1}
 local hsConn = nil
-
 local function findVM()
     local r = nil
     pcall(function()
@@ -1925,11 +1176,8 @@ local function applyHS(sId, vol, pit)
             end
         end
         hsConn = trackConn(vm.ChildAdded:Connect(function(v)
-            if not hsCfg.enabled or not v:IsA("Sound") then return end
-            if v.SoundId == "rbxassetid://16537449730" then return end
-            task.defer(function()
-                pcall(function() v.SoundId=sId; v.Pitch=pit; v.Volume=vol end)
-            end)
+            if not hsCfg.enabled or not v:IsA("Sound") or v.SoundId == "rbxassetid://16537449730" then return end
+            task.defer(function() pcall(function() v.SoundId=sId; v.Pitch=pit; v.Volume=vol end) end)
         end))
     end)
 end
@@ -1940,77 +1188,42 @@ local function stopHS()
 end
 
 local HSMain = Tabs.HitSound:AddLeftGroupbox('Hit Sound')
-HSMain:AddToggle('HSOn', {
-    Text='Enable Hit Sound', Default=false,
-    Callback=function(v)
-        hsCfg.enabled = v
-        if v then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch); notify("Hit Sound","Active!")
-        else stopHS(); notify("Hit Sound","Off") end
-    end
-})
-HSMain:AddDropdown('HSSound', {
-    Text='Sound', Values=HIT_SOUND_LIST, Default='Rust',
-    Callback=function(v)
-        hsCfg.soundId = HIT_SOUNDS[v] or hsCfg.soundId
-        if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
-    end
-})
-HSMain:AddSlider('HSVol', {
-    Text='Volume', Default=100, Min=1, Max=100, Rounding=0, Suffix='%',
-    Callback=function(v)
-        hsCfg.volume = v/100
-        if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
-    end
-})
-HSMain:AddSlider('HSPitch', {
-    Text='Pitch', Default=10, Min=1, Max=30, Rounding=0, Suffix='x0.1',
-    Callback=function(v)
-        hsCfg.pitch = v*0.1
-        if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
-    end
-})
-
--- =============================================
---   CAMERA
--- =============================================
+HSMain:AddToggle('HSOn', {Text='Enable Hit Sound', Default=false, Callback=function(v)
+    hsCfg.enabled = v
+    if v then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch); notify("Hit Sound","Active!") else stopHS(); notify("Hit Sound","Off") end
+end})
+HSMain:AddDropdown('HSSound', {Text='Sound', Values=HIT_SOUND_LIST, Default='Rust', Callback=function(v)
+    hsCfg.soundId = HIT_SOUNDS[v] or hsCfg.soundId
+    if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
+end})
+HSMain:AddSlider('HSVol', {Text='Volume', Default=100, Min=1, Max=100, Rounding=0, Suffix='%', Callback=function(v)
+    hsCfg.volume = v/100
+    if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
+end})
+HSMain:AddSlider('HSPitch', {Text='Pitch', Default=10, Min=1, Max=30, Rounding=0, Suffix='x0.1', Callback=function(v)
+    hsCfg.pitch = v*0.1
+    if hsCfg.enabled then applyHS(hsCfg.soundId,hsCfg.volume,hsCfg.pitch) end
+end})
 
 local CamMain = Tabs.Camera:AddLeftGroupbox('Camera')
 local CamAdv  = Tabs.Camera:AddRightGroupbox('Sensitivity & VM')
-
 local fovChangerConn = nil
-CamMain:AddToggle('FovChanger', {
-    Text='FOV Changer', Default=false,
-    Callback=function(v)
-        if v then
-            fovChangerConn = trackConn(RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController._base_fov = Options.FovVal.Value
-                    end
-                end)
-            end))
-        else
-            if fovChangerConn then fovChangerConn:Disconnect(); fovChangerConn=nil end
-            pcall(function()
-                if CameraController then
-                    CameraController._base_fov = 80
-                    ws.CurrentCamera.FieldOfView = 80
-                end
-            end)
-        end
+
+CamMain:AddToggle('FovChanger', {Text='FOV Changer', Default=false, Callback=function(v)
+    if v then
+        fovChangerConn = trackConn(RunService.RenderStepped:Connect(function()
+            pcall(function() if CameraController then CameraController._base_fov = Options.FovVal.Value end end)
+        end))
+    else
+        if fovChangerConn then fovChangerConn:Disconnect(); fovChangerConn=nil end
+        pcall(function() if CameraController then CameraController._base_fov = 80; ws.CurrentCamera.FieldOfView = 80 end end)
     end
-})
-CamMain:AddSlider('FovVal', {
-    Text='FOV', Default=80, Min=30, Max=120, Rounding=0,
-    Callback=function(v)
-        if Toggles.FovChanger.Value then
-            pcall(function() if CameraController then CameraController._base_fov=v end end)
-        end
-    end
-})
+end})
+CamMain:AddSlider('FovVal', {Text='FOV', Default=80, Min=30, Max=120, Rounding=0, Callback=function(v)
+    if Toggles.FovChanger.Value then pcall(function() if CameraController then CameraController._base_fov=v end end) end
+end})
 
 local noShakeConn,noSwayConn,noBobConn,noJumpConn,noSlideConn,crossConn = nil,nil,nil,nil,nil,nil
-
 CamMain:AddToggle('NoShake', {Text='No Camera Shake', Default=false, Callback=function(v)
     if v then noShakeConn = trackConn(RunService.RenderStepped:Connect(function()
         pcall(function() if CameraController then CameraController._shake_enabled=false; CameraController.ShakeCFrame=CFrame.identity end end)
@@ -2043,19 +1256,16 @@ CamMain:AddToggle('ForceCross', {Text='Force Crosshair', Default=false, Callback
 end})
 
 local sensConn = nil
-CamAdv:AddToggle('SensOn', {
-    Text='Override Sensitivity', Default=false,
-    Callback=function(v)
-        if v then
-            sensConn = trackConn(RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if not CameraController then return end
-                    CameraController._camera_sensitivity                       = Options.SensVal.Value/100
-                    CameraController._camera_sensitivity_ads_multiplier        = Options.SensADS.Value/100
-                    CameraController._camera_sensitivity_ads_multiplier_scoped = Options.SensScoped.Value/100
-                    CameraController._camera_sensitivity_x                     = Options.SensX.Value/100
-                    CameraController._camera_sensitivity_y                     = Options.SensY.Value/100
-                end)
+CamAdv:AddToggle('SensOn', {Text='Override Sensitivity', Default=false, Callback=function(v)
+    if v then
+        sensConn = trackConn(RunService.RenderStepped:Connect(function()
+            pcall(function()
+                if not CameraController then return end
+                CameraController._camera_sensitivity                       = Options.SensVal.Value/100
+                CameraController._camera_sensitivity_ads_multiplier        = Options.SensADS.Value/100
+                CameraController._camera_sensitivity_ads_multiplier_scoped = Options.SensScoped.Value/100
+                CameraController._camera_sensitivity_x                     = Options.SensX.Value/100
+                CameraController._camera_sensitivity_y                     = Options.SensY.Value/100
             end))
         else
             if sensConn then sensConn:Disconnect(); sensConn=nil end
@@ -2071,38 +1281,21 @@ CamAdv:AddSlider('SensY',      {Text='Y Axis',      Default=100, Min=1, Max=500,
 
 local vmConn = nil
 local vmCfg  = {x=0,y=0,z=0}
-CamAdv:AddToggle('VMOn', {
-    Text='Custom Viewmodel', Default=false,
-    Callback=function(v)
-        if v then
-            vmConn = trackConn(RunService.RenderStepped:Connect(function()
-                pcall(function()
-                    if CameraController then
-                        CameraController.ViewModelOffsetCFrame = CFrame.new(vmCfg.x,vmCfg.y,vmCfg.z)
-                    end
-                end)
-            end))
-        else
-            if vmConn then vmConn:Disconnect(); vmConn=nil end
-            pcall(function() if CameraController then CameraController.ViewModelOffsetCFrame=CFrame.identity end end)
-        end
+CamAdv:AddToggle('VMOn', {Text='Custom Viewmodel', Default=false, Callback=function(v)
+    if v then
+        vmConn = trackConn(RunService.RenderStepped:Connect(function()
+            pcall(function() if CameraController then CameraController.ViewModelOffsetCFrame = CFrame.new(vmCfg.x,vmCfg.y,vmCfg.z) end end)
+        end))
+    else
+        if vmConn then vmConn:Disconnect(); vmConn=nil end
+        pcall(function() if CameraController then CameraController.ViewModelOffsetCFrame=CFrame.identity end end)
     end
-})
+end})
 CamAdv:AddSlider('VMX', {Text='X Offset', Default=0, Min=-50, Max=50, Rounding=0, Suffix='x0.1', Callback=function(v) vmCfg.x=v*0.1 end})
 CamAdv:AddSlider('VMY', {Text='Y Offset', Default=0, Min=-50, Max=50, Rounding=0, Suffix='x0.1', Callback=function(v) vmCfg.y=v*0.1 end})
 CamAdv:AddSlider('VMZ', {Text='Z Offset', Default=0, Min=-50, Max=50, Rounding=0, Suffix='x0.1', Callback=function(v) vmCfg.z=v*0.1 end})
 
--- =============================================
---   MISC
--- =============================================
-
-local lCfg = {
-    primary   = PRIMARY_WEAPONS[1],
-    secondary = SECONDARY_WEAPONS[1],
-    melee     = MELEE_WEAPONS[1],
-    utility   = UTILITY_WEAPONS[1],
-}
-
+local lCfg = { primary=PRIMARY_WEAPONS[1], secondary=SECONDARY_WEAPONS[1], melee=MELEE_WEAPONS[1], utility=UTILITY_WEAPONS[1] }
 local MLoad  = Tabs.Misc:AddLeftGroupbox('Loadout')
 local MQueue = Tabs.Misc:AddRightGroupbox('Queue & Vote')
 
@@ -2111,61 +1304,41 @@ MLoad:AddDropdown('LSecondary', {Text='Secondary', Values=SECONDARY_WEAPONS, Def
 MLoad:AddDropdown('LMelee',     {Text='Melee',     Values=MELEE_WEAPONS,     Default=MELEE_WEAPONS[1],     Callback=function(v) lCfg.melee     = v end})
 MLoad:AddDropdown('LUtility',   {Text='Utility',   Values=UTILITY_WEAPONS,   Default=UTILITY_WEAPONS[1],   Callback=function(v) lCfg.utility   = v end})
 MLoad:AddButton({Text='Apply Loadout', Func=function()
-    pcall(function()
-        PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility})
-        notify("Loadout","Applied!")
-    end)
+    pcall(function() PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility}); notify("Loadout","Applied!") end)
 end})
 MLoad:AddToggle('AutoLoadout', {Text='Auto Apply On Spawn', Default=false, Callback=function(_) end})
 
 lp.CharacterAdded:Connect(function()
     if Toggles.AutoLoadout.Value then
         task.wait(1)
-        pcall(function()
-            PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility})
-        end)
+        pcall(function() PickWeaponsRemote:FireServer({lCfg.primary,lCfg.secondary,lCfg.melee,lCfg.utility}) end)
     end
 end)
 
 MQueue:AddDropdown('QMode',  {Text='Queue Mode', Values=QUEUE_MODES, Default='1v1', Callback=function(_) end})
 MQueue:AddButton({Text='Join Queue', Func=function()
-    pcall(function()
-        local m = Options.QMode.Value
-        QueueRemote:InvokeServer(m)
-        notify("Queue","Joined "..m.."!")
-    end)
+    pcall(function() local m = Options.QMode.Value; QueueRemote:InvokeServer(m); notify("Queue","Joined "..m.."!") end)
 end})
 MQueue:AddDropdown('VMap', {Text='Vote Map', Values=MAPS, Default=MAPS[1], Callback=function(_) end})
 MQueue:AddButton({Text='Vote Map', Func=function()
-    pcall(function()
-        VoteRemote:FireServer(Options.VMap.Value)
-        notify("Vote","Voted "..Options.VMap.Value.."!")
-    end)
+    pcall(function() VoteRemote:FireServer(Options.VMap.Value); notify("Vote","Voted "..Options.VMap.Value.."!") end)
 end})
 
 local autoVoteTask = nil
-MQueue:AddToggle('AutoVote', {
-    Text='Auto Vote', Default=false,
-    Callback=function(v)
-        if autoVoteTask then task.cancel(autoVoteTask); autoVoteTask=nil end
-        if v then
-            autoVoteTask = task.spawn(function()
-                while Toggles.AutoVote.Value do
-                    pcall(function() VoteRemote:FireServer(Options.VMap.Value) end)
-                    task.wait(2)
-                end
-            end)
-        end
+MQueue:AddToggle('AutoVote', {Text='Auto Vote', Default=false, Callback=function(v)
+    if autoVoteTask then task.cancel(autoVoteTask); autoVoteTask=nil end
+    if v then
+        autoVoteTask = task.spawn(function()
+            while Toggles.AutoVote.Value do
+                pcall(function() VoteRemote:FireServer(Options.VMap.Value) end)
+                task.wait(2)
+            end
+        end)
     end
-})
-
--- =============================================
---   SKYBOX
--- =============================================
+end})
 
 local origSky = nil
 local skyOn   = false
-
 local function getSky()  return ws.Terrain:FindFirstChildOfClass("Sky") end
 local function getAtmo() return ws.Terrain:FindFirstChildOfClass("Atmosphere") end
 
@@ -2213,29 +1386,16 @@ local function restoreSky()
 end
 
 local SkyMain = Tabs.Skybox:AddLeftGroupbox('Skybox')
-SkyMain:AddToggle('SkyOn', {
-    Text='Enable Skybox', Default=false,
-    Callback=function(v)
-        skyOn = v
-        if v then applySky(Options.SkySel.Value); notify("Skybox","Applied!")
-        else restoreSky(); notify("Skybox","Restored!") end
-    end
-})
-SkyMain:AddDropdown('SkySel', {
-    Text='Skybox', Values=SKYBOX_LIST, Default='Default',
-    Callback=function(v) if skyOn then applySky(v) end end
-})
+SkyMain:AddToggle('SkyOn', {Text='Enable Skybox', Default=false, Callback=function(v)
+    skyOn = v
+    if v then applySky(Options.SkySel.Value); notify("Skybox","Applied!") else restoreSky(); notify("Skybox","Restored!") end
+end})
+SkyMain:AddDropdown('SkySel', {Text='Skybox', Values=SKYBOX_LIST, Default='Default', Callback=function(v) if skyOn then applySky(v) end end})
 SkyMain:AddButton({Text='Apply Now', Func=function()
     if not skyOn then notify("Skybox","Enable first!",2); return end
     applySky(Options.SkySel.Value); notify("Skybox","Applied!")
 end})
-SkyMain:AddButton({Text='Restore', Func=function()
-    restoreSky(); notify("Skybox","Restored!")
-end})
-
--- =============================================
---   EXPLOITS
--- =============================================
+SkyMain:AddButton({Text='Restore', Func=function() restoreSky(); notify("Skybox","Restored!") end})
 
 local DevMain = Tabs.Exploits:AddLeftGroupbox('Device Spoofer')
 local CoolSec = Tabs.Exploits:AddRightGroupbox('Fast Cooldowns')
@@ -2245,9 +1405,7 @@ local deviceSpoofs = {Computer="MouseKeyboard",Mobile="Touch",Console="Gamepad",
 local function spoofDevice(deviceType)
     local targetDevice = deviceSpoofs[deviceType]
     if not targetDevice then notify("Device Spoofer","Unknown type!",3); return end
-    if not SetControlsRemote then
-        SetControlsRemote = RBF and RBF:FindFirstChild("SetControls")
-    end
+    if not SetControlsRemote then SetControlsRemote = RBF and RBF:FindFirstChild("SetControls") end
     if not SetControlsRemote then notify("Device Spoofer","Remote not found!",3); return end
     local ok, err = pcall(function() SetControlsRemote:FireServer(targetDevice) end)
     if ok then notify("Device Spoofer","Spoofed to: "..deviceType,3)
@@ -2328,13 +1486,11 @@ local function patchWarHorn()
 end
 
 local cooldownLoopTask = nil
-
 local function startCooldownLoop()
     cooldownCfg.loopActive = true
     cooldownLoopTask = task.spawn(function()
         while cooldownCfg.loopActive do
-            if cooldownCfg.warHornOnly then patchWarHorn()
-            else setFastCooldowns() end
+            if cooldownCfg.warHornOnly then patchWarHorn() else setFastCooldowns() end
             task.wait(cooldownCfg.loopInterval)
         end
     end)
@@ -2345,42 +1501,18 @@ local function stopCooldownLoop()
     if cooldownLoopTask then task.cancel(cooldownLoopTask); cooldownLoopTask=nil end
 end
 
-CoolSec:AddToggle('FastCool', {
-    Text='Enable Fast Cooldowns', Default=false,
-    Callback=function(v)
-        cooldownCfg.enabled = v
-        if v then setFastCooldowns(); startCooldownLoop(); notify("Fast Cooldowns","Active!")
-        else stopCooldownLoop(); notify("Fast Cooldowns","Off") end
-    end
-})
-CoolSec:AddToggle('WarHornOnly', {
-    Text='War Horn Only', Default=false,
-    Callback=function(v) cooldownCfg.warHornOnly = v end
-})
-CoolSec:AddSlider('CoolInterval', {
-    Text='Loop Interval', Default=2, Min=1, Max=30, Rounding=0, Suffix='s',
-    Callback=function(v) cooldownCfg.loopInterval = v end
-})
+CoolSec:AddToggle('FastCool', {Text='Enable Fast Cooldowns', Default=false, Callback=function(v)
+    cooldownCfg.enabled = v
+    if v then setFastCooldowns(); startCooldownLoop(); notify("Fast Cooldowns","Active!") else stopCooldownLoop(); notify("Fast Cooldowns","Off") end
+end})
+CoolSec:AddToggle('WarHornOnly', {Text='War Horn Only', Default=false, Callback=function(v) cooldownCfg.warHornOnly = v end})
+CoolSec:AddSlider('CoolInterval', {Text='Loop Interval', Default=2, Min=1, Max=30, Rounding=0, Suffix='s', Callback=function(v) cooldownCfg.loopInterval = v end})
 CoolSec:AddButton({Text='Apply Once', Func=function()
-    if cooldownCfg.warHornOnly then
-        local ok = patchWarHorn()
-        notify("War Horn", ok and "Patched!" or "Not found",3)
-    else
-        setFastCooldowns()
-        notify("Fast Cooldowns","Applied once!",3)
-    end
+    if cooldownCfg.warHornOnly then local ok = patchWarHorn(); notify("War Horn", ok and "Patched!" or "Not found",3)
+    else setFastCooldowns(); notify("Fast Cooldowns","Applied once!",3) end
 end})
-CoolSec:AddButton({Text='Patch War Horn Now', Func=function()
-    local ok = patchWarHorn()
-    notify("War Horn", ok and "Patched!" or "Not found",3)
-end})
-
--- =============================================
---   UI SETTINGS
--- =============================================
 
 local MenuGroup = Tabs.UISettings:AddLeftGroupbox('Menu')
-
 MenuGroup:AddButton('Unload', function()
     _wmActive = false
     cleanupAll()
@@ -2394,53 +1526,21 @@ MenuGroup:AddButton('Unload', function()
     RunService:UnbindFromRenderStep("vfr_csync")
     Library:Unload()
 end)
-
-MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
-    Default = 'End',
-    NoUI    = true,
-    Text    = 'Menu keybind'
-})
-
+MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'End', NoUI = true, Text = 'Menu keybind' })
 Library.ToggleKeybind = Options.MenuKeybind
 
 local AdvancedGroup = Tabs.UISettings:AddLeftGroupbox('Advanced')
 AdvancedGroup:AddToggle('ShowAdvanced', {Text='Show advanced options', Default=false})
-
 local AdvancedBox = AdvancedGroup:AddDependencyBox()
-AdvancedBox:AddSlider('UIScaleSlider', {
-    Text='UI scale', Default=100, Min=50, Max=150, Rounding=0, Suffix='%',
-    Callback=function(v) Window:SetScale(v/100) end
-})
-AdvancedBox:AddSlider('UITransparencySlider', {
-    Text='Menu transparency', Default=0, Min=0, Max=90, Rounding=0, Suffix='%',
-    Callback=function(v) Window:SetTransparency(v/100) end
-})
-AdvancedBox:AddToggle('MobileButtonToggle', {
-    Text='Show floating mobile button', Default=true,
-    Callback=function(v) Library:SetMobileButtonVisibility(v) end
-})
+AdvancedBox:AddSlider('UIScaleSlider', {Text='UI scale', Default=100, Min=50, Max=150, Rounding=0, Suffix='%', Callback=function(v) Window:SetScale(v/100) end})
+AdvancedBox:AddSlider('UITransparencySlider', {Text='Menu transparency', Default=0, Min=0, Max=90, Rounding=0, Suffix='%', Callback=function(v) Window:SetTransparency(v/100) end})
+AdvancedBox:AddToggle('MobileButtonToggle', {Text='Show floating mobile button', Default=true, Callback=function(v) Library:SetMobileButtonVisibility(v) end})
 AdvancedBox:AddDivider()
-AdvancedBox:AddDropdown('WeatherEffectDropdown', {
-    Text='Weather effect', Values={'None','Snow','Rain','Lightning'}, Default='None',
-    Callback=function(v) Library:SetWeatherEffect(v) end
-})
-AdvancedBox:AddDropdown('WeatherScopeDropdown', {
-    Text='Weather location', Values={'Inside UI','Whole screen'}, Default='Inside UI',
-    Callback=function(v) Library:SetWeatherScope(v=='Whole screen' and 'Screen' or 'UI') end
-})
-AdvancedBox:AddToggle('GlowToggle', {
-    Text='Open/close glow effect', Default=true,
-    Callback=function(v) Library:SetGlowEnabled(v) end
-})
-AdvancedBox:AddLabel('Glow color'):AddColorPicker('GlowColorPicker', {
-    Default=Color3.fromRGB(0,85,255),
-    Callback=function(v) Library:SetGlowColor(v) end
-})
+AdvancedBox:AddDropdown('WeatherEffectDropdown', {Text='Weather effect', Values={'None','Snow','Rain','Lightning'}, Default='None', Callback=function(v) Library:SetWeatherEffect(v) end})
+AdvancedBox:AddDropdown('WeatherScopeDropdown', {Text='Weather location', Values={'Inside UI','Whole screen'}, Default='Inside UI', Callback=function(v) Library:SetWeatherScope(v=='Whole screen' and 'Screen' or 'UI') end})
+AdvancedBox:AddToggle('GlowToggle', {Text='Open/close glow effect', Default=true, Callback=function(v) Library:SetGlowEnabled(v) end})
+AdvancedBox:AddLabel('Glow color'):AddColorPicker('GlowColorPicker', {Default=Color3.fromRGB(0,85,255), Callback=function(v) Library:SetGlowColor(v) end})
 AdvancedBox:SetupDependencies({{Toggles.ShowAdvanced, true}})
-
--- =============================================
---   ADDONS
--- =============================================
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
@@ -2452,22 +1552,11 @@ SaveManager:BuildConfigSection(Tabs.UISettings)
 ThemeManager:ApplyToTab(Tabs.UISettings)
 SaveManager:LoadAutoloadConfig()
 
--- =============================================
---   WATERMARK
--- =============================================
-
-local _fps        = 0
-local _ping       = 0
-local _frameCount = 0
-local _frameTimer = tick()
-local _wmActive   = true
-
+local _fps, _ping, _frameCount, _frameTimer, _wmActive = 0, 0, 0, tick(), true
 trackConn(RunService.Heartbeat:Connect(function()
     _frameCount += 1
     if tick() - _frameTimer >= 1 then
-        _fps        = _frameCount
-        _frameTimer = tick()
-        _frameCount = 0
+        _fps, _frameTimer, _frameCount = _frameCount, tick(), 0
     end
 end))
 
@@ -2475,33 +1564,21 @@ task.spawn(function()
     while _wmActive do
         task.wait(0.5)
         if not _wmActive then break end
-        local ok, pingVal = pcall(function()
-            return math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-        end)
+        local ok, pingVal = pcall(function() return math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
         if ok and pingVal then _ping = pingVal end
-        pcall(function()
-            Library:SetWatermark('Rivals Hub  |  FPS: '.._fps..'  |  Ping: '.._ping..'ms')
-        end)
+        pcall(function() Library:SetWatermark('Rivals Hub  |  FPS: '.._fps..'  |  Ping: '.._ping..'ms') end)
     end
 end)
-
 Library:SetWatermarkVisibility(true)
 
--- =============================================
---   HEARTBEAT — Aimbot + Cache + Silent
--- =============================================
-
 local _heartbeatTimer = 0
-
 trackConn(RunService.Heartbeat:Connect(function(dt)
     cam = ws.CurrentCamera
     _heartbeatTimer += dt
-
     if _heartbeatTimer >= TARGET_CACHE_TTL then
         _heartbeatTimer = 0
         if AB.on and isKeybindActive("Aimbot") then
-            _targetCache     = abFind()
-            _targetCacheTime = tick()
+            _targetCache, _targetCacheTime = abFind(), tick()
         else
             _targetCache = nil
         end
@@ -2511,24 +1588,16 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
             _silentTarget = nil
         end
     end
-
-    -- Aimbot logic
     if AB.on and isKeybindActive("Aimbot") and CameraController then
         if abDoReact then
             abReactT -= dt
             if abReactT <= 0 then abDoReact = false end
         end
         if not abDoReact then
-            if abTgt and not abTgtValid(abTgt) then
-                abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-            end
+            if abTgt and not abTgtValid(abTgt) then abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
             if not abTgt then
                 abTgt = _targetCache
-                if abTgt then
-                    abLockT=0;abDoReact=true
-                    abReactT=AB.reactTime/1000
-                    abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-                end
+                if abTgt then abLockT=0;abDoReact=true;abReactT=AB.reactTime/1000;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
             end
             if abTgt then
                 abLockT += dt
@@ -2538,18 +1607,12 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
                     pcall(function()
                         local aimPos = getPredictedPos(abTgt)
                         local du     = (aimPos - cam.CFrame.Position).Unit
-                        local tRot   = Vector2.new(
-                            math.asin(math.clamp(du.Y,-1,1)),
-                            math.atan2(-du.X,-du.Z)
-                        )
+                        local tRot   = Vector2.new(math.asin(math.clamp(du.Y,-1,1)), math.atan2(-du.X,-du.Z))
                         local cur   = CameraController.Rotation
                         local sp, _ = cam:WorldToViewportPoint(aimPos)
                         local sd    = (Vector2.new(sp.X,sp.Y) - scr()).Magnitude
                         local newRot = applySmartLock(tRot, cur, dt, sd, abEffFov())
-                        CameraController:ApplyRotationDelta(Vector2.new(
-                            newRot.X - cur.X,
-                            angDiff(cur.Y, newRot.Y)
-                        ))
+                        CameraController:ApplyRotationDelta(Vector2.new(newRot.X - cur.X, angDiff(cur.Y, newRot.Y)))
                     end)
                 else
                     abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
@@ -2557,76 +1620,38 @@ trackConn(RunService.Heartbeat:Connect(function(dt)
             end
         end
     else
-        -- Clear aimbot when keybind released
-        if abTgt then
-            abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0
-        end
+        if abTgt then abTgt=nil;abLockT=0;abPrevPos=nil;abCurveStart=nil;abCurveProgress=0 end
     end
 end))
 
--- =============================================
---   RENDERSTEPPED — Drawing Only
--- =============================================
-
 trackConn(RunService.RenderStepped:Connect(function()
     cam = ws.CurrentCamera
-
-    -- Aimbot FOV Drawing
     if not fovCfg.visible then
-        fovCircle.Visible = false
-        fovHalf.Visible   = false
-        abCirc.Visible    = false
+        fovCircle.Visible, fovHalf.Visible, abCirc.Visible = false, false, false
     else
         local center = fovCfg.useCenter and scr() or getMouse()
-        fovCircle.Visible  = true
-        fovCircle.Color    = fovCfg.color
-        fovCircle.Position = center
+        fovCircle.Visible, fovCircle.Color, fovCircle.Position = true, fovCfg.color, center
         local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
         local orig   = myRoot and myRoot.Position or cam.CFrame.Position
-        fovCircle.Radius = (abTgt and isVis(orig,abTgt))
-            and fovCfg.onTarget
-            or  (abTgt and fovCfg.onBarrier)
-            or  fovCfg.fovSize
+        fovCircle.Radius = (abTgt and isVis(orig,abTgt)) and fovCfg.onTarget or (abTgt and fovCfg.onBarrier) or fovCfg.fovSize
         if fovCfg.half then
-            fovHalf.Visible   = true
-            fovHalf.Color     = fovCfg.color
-            fovHalf.Position  = center
-            fovHalf.Radius    = fovCircle.Radius * 0.5
+            fovHalf.Visible, fovHalf.Color, fovHalf.Position, fovHalf.Radius = true, fovCfg.color, center, fovCircle.Radius * 0.5
         else
             fovHalf.Visible = false
         end
-        abCirc.Position = center
-        abCirc.Radius   = abEffFov()
-        abCirc.Visible  = AB.on
+        abCirc.Position, abCirc.Radius, abCirc.Visible = center, abEffFov(), AB.on
     end
 
-    -- Silent FOV Drawing
     if not silentCfg.enabled or not silentCfg.circleVisible then
         silentCircle.Visible = false
     else
         local center = silentCfg.useCenter and scr() or getMouse()
-        silentCircle.Visible   = true
-        silentCircle.Radius    = silentCfg.fovSize
-        silentCircle.Thickness = silentCfg.circleThick
-        silentCircle.Position  = center
-        silentCircle.Color     = _silentTarget ~= nil
-            and silentCfg.targetColor
-            or  silentCfg.circleColor
+        silentCircle.Visible, silentCircle.Radius, silentCircle.Thickness, silentCircle.Position = true, silentCfg.fovSize, silentCfg.circleThick, center
+        silentCircle.Color = _silentTarget ~= nil and silentCfg.targetColor or silentCfg.circleColor
     end
 
-    -- Ragebot Status Drawing
-    if rsStatusCfg.enabled then
-        drawRageStatus()
-    else
-        hideRageStatus()
-    end
+    if rsStatusCfg.enabled then drawRageStatus() else hideRageStatus() end
 end))
 
--- =============================================
---   INIT
--- =============================================
-
 task.delay(2, function() patchWarHorn() end)
-
-notify("Rivals Hub","v2.4 Loaded! AC Bypass + Keybinds + Triggerbot!",5)
-print("[v2.4] Rivals Hub — Complete — AC Bypass pre-loaded — All features active")
+notify("Rivals Hub","Loaded! AC Bypass + Keybinds + Triggerbot!",5)
