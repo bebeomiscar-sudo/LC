@@ -1,1507 +1,351 @@
---// =============================================
---// RIVALS MOBILE AIMBOT + SILENT AIM v2
---// Smoothness · Delay Position (X/Y/Jump Smooth)
---// Closest Part · Closest Position
---// Silent Aim (Utility.Raycast Hook)
---// Config Save/Load · Team/Visible Check
---// Silent Load · Floating Button
---// Pure Instance UI · Rivals CameraController
---// AC Bypass (LocalScript3 & MiscController)
---// =============================================
-
-if getgenv().RivalsAimbotCleanup then
-    pcall(getgenv().RivalsAimbotCleanup)
+game:GetService("StarterPlayer").StarterPlayerScripts.Controllers.FighterController
+local v_u_1 = game:GetService("ReplicatedStorage")
+local v_u_2 = game:GetService("StarterGui")
+game:GetService("RunService")
+local v_u_3 = game:GetService("Players")
+require(v_u_1.Modules.CONSTANTS)
+local v_u_4 = require(v_u_1.Modules.EnumLibrary)
+local v_u_5 = require(v_u_1.Modules.Utility)
+require(v_u_3.LocalPlayer.PlayerScripts.Controllers.PlayerDataController)
+local v_u_6 = require(v_u_3.LocalPlayer.PlayerScripts.Controllers.ControlsController)
+local v_u_7 = require(v_u_3.LocalPlayer.PlayerScripts.Controllers.CameraController)
+local v_u_8 = require(v_u_3.LocalPlayer.PlayerScripts.Modules.ReplicatedController)
+local v_u_9 = v_u_3.LocalPlayer.PlayerScripts.Assets:WaitForChild("Misc"):WaitForChild("DefaultCharacter")
+local v_u_10 = setmetatable({}, v_u_8)
+v_u_10.__index = v_u_10
+function v_u_10._new() -- name: _new
+	-- upvalues: (copy) v_u_8, (copy) v_u_10
+	local v11 = v_u_8.new("Fighter")
+	local v12 = v_u_10
+	local v13 = setmetatable(v11, v12)
+	v13.LocalFighter = nil
+	v13._network_id_map = {}
+	v13._last_connection_level = nil
+	v13._player_to_fighter = {}
+	v13._model_to_fighter = {}
+	v13._last_controls_replicated_time = 0
+	v13._character_model_cache = {}
+	v13:_Init()
+	return v13
 end
-
---// =============================================
---// [0] AC BYPASS
---// =============================================
-local _stbl; _stbl = hookfunction(getrenv().setmetatable, newcclosure(function(tbl, mt)
-    if mt and typeof(mt) == "table" and rawget(mt, "__mode") == "kv" then
-        local tr = debug.traceback()
-        if tr:find("MiscellaneousController") then
-            return _stbl({1,2,3}, {})
-        end
-    end
-    return _stbl(tbl, mt)
-end))
-
-coroutine.wrap(function()
-    pcall(function()
-        local function _proc(o)
-            pcall(function()
-                if o:IsA("LocalScript") or o:IsA("ModuleScript") then
-                    local _s, nm = pcall(function() return o.Name:lower() end)
-                    if not _s or not nm then return end
-                    local _tags = {"anticheat","ac","detection","ban","kick","security","moderation"}
-                    for _i = 1, #_tags do
-                        if nm:find(_tags[_i]) then
-                            pcall(function() o.Disabled = true end)
-                            break
-                        end
-                    end
-                end
-            end)
-        end
-        pcall(function()
-            local _desc = game:GetDescendants()
-            for _i = 1, #_desc do _proc(_desc[_i]) end
-        end)
-        pcall(function() game.DescendantAdded:Connect(_proc) end)
-    end)
-    pcall(function()
-        local _nc = game:GetService("NetworkClient")
-        if not _nc then return end
-        _nc.ChildAdded:Connect(function(ch)
-            pcall(function()
-                local _ok, _n = pcall(function() return ch.Name:lower() end)
-                if _ok and _n then
-                    if _n:find("anticheat") or _n:find("detection") then
-                        pcall(function() ch:Destroy() end)
-                    end
-                end
-            end)
-        end)
-    end)
-end)()
-
-local _fakeEv
-pcall(function()
-    _fakeEv = Instance.new("RemoteEvent")
-    _fakeEv.Name = "ClientAlert"
-    _fakeEv.Parent = game:GetService("Players").LocalPlayer
-end)
-
-pcall(function()
-    local _rf = game:GetService("ReplicatedFirst")
-    local _tgt = _rf:WaitForChild("LocalScript3", 10)
-    local _ct = 0
-    local _gc = getgc(false)
-    for _i = 1, #_gc do
-        local _fn = _gc[_i]
-        if type(_fn) ~= "function" then continue end
-        local _ok1, _env = pcall(getfenv, _fn)
-        if not _ok1 or type(_env) ~= "table" then continue end
-        local _ok2, _scr = pcall(function() return rawget(_env, "script") end)
-        if not _ok2 or not _scr or typeof(_scr) ~= "Instance" then continue end
-        local _ok3, _ss = pcall(tostring, _scr)
-        if not _ok3 then continue end
-        if not (_scr == _tgt or (type(_ss) == "string" and _ss:find("LoadingScreen"))) then continue end
-        local _ok4, _consts = pcall(debug.getconstants, _fn)
-        if not _ok4 or type(_consts) ~= "table" then continue end
-        for _j = 1, #_consts do
-            local _c = _consts[_j]
-            if type(_c) == "string" and (_c:find("TakeTheL") or _c:find("ban") or _c:find("kick")) then
-                pcall(function()
-                    hookfunction(_fn, function() end)
-                    _ct += 1
-                end)
-                break
-            end
-        end
-    end
-end)
-
-task.wait(4)
-
-if not game:IsLoaded() then game.Loaded:Wait() end
-task.wait(0.2)
-
---// =============================================
---// [1] LOAD MODE
---// =============================================
-local SILENT_LOAD = getgenv().RivalsSilentLoad or false
-local AUTO_LOAD   = getgenv().RivalsAutoLoad   or false
-
---// =============================================
---// [2] SERVICES
---// =============================================
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService     = game:GetService("TweenService")
-local CoreGui          = game:GetService("CoreGui")
-local HttpService      = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local LocalPlayer = Players.LocalPlayer
-local Camera      = workspace.CurrentCamera
-
---// =============================================
---// [3] CONFIG FOLDER
---// =============================================
-local CONFIG_FOLDER = "RivalsAimbot"
-pcall(function()
-    if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
-end)
-
---// =============================================
---// [4] CAMERA CONTROLLER
---// =============================================
-local CameraController = nil
-
-pcall(function()
-    CameraController = require(
-        LocalPlayer
-            :WaitForChild("PlayerScripts", 10)
-            :WaitForChild("Controllers", 10)
-            :WaitForChild("TimerController", 10)
-            :WaitForChild("CameraController", 10)
-    )
-end)
-
-if not CameraController then
-    pcall(function()
-        local timer = require(
-            LocalPlayer.PlayerScripts
-                :WaitForChild("Controllers", 10)
-                :WaitForChild("TimerController", 10)
-        )
-        if timer and timer.CameraController then
-            CameraController = timer.CameraController
-        end
-    end)
+function v_u_10.GetFighter(p14, p15) -- name: GetFighter
+	-- upvalues: (copy) v_u_3
+	local v16 = p14._player_to_fighter[p15] or p14._model_to_fighter[p15]
+	if v16 then
+		return v16
+	elseif p15 then
+		if typeof(p15) == "Instance" then
+			if not p15:IsA("Player") then
+				return p14:GetFighter(v_u_3:GetPlayerFromCharacter(p15))
+			end
+			for v17, v18 in pairs(p14.Objects) do
+				if v18.Player == p15 then
+					return v18, v17
+				end
+			end
+			return nil
+		end
+		if typeof(p15) == "number" then
+			return p14:GetFighter(v_u_3:GetPlayerByUserId(p15))
+		end
+		local v19 = "Argument 1 invalid, expected a Player or a Model or nil, got " .. tostring(p15) .. " (type: " .. (typeof(p15) == "Instance" and p15.ClassName or typeof(p15)) .. ")"
+		assert(false, v19)
+	end
 end
-
-if not CameraController then
-    pcall(function()
-        for _, desc in ipairs(LocalPlayer.PlayerScripts:GetDescendants()) do
-            if desc:IsA("ModuleScript") and desc.Name == "CameraController" then
-                local ok, mod = pcall(require, desc)
-                if ok and mod and mod.Rotation and mod.SetRotation then
-                    CameraController = mod
-                    break
-                end
-            end
-        end
-    end)
+function v_u_10.GetFighterFromNetworkID(p20, p21) -- name: GetFighterFromNetworkID
+	return p20._network_id_map[p21]
 end
-
---// =============================================
---// [4.5] UTILITY MODULE (SILENT AIM)          [NEW]
---// loads the Utility module that Rivals uses
---// for raycasting — we hook Utility.Raycast
---// =============================================
-local UtilityModule = nil
-
-pcall(function()
-    UtilityModule = require(
-        ReplicatedStorage
-            :WaitForChild("Modules", 10)
-            :WaitForChild("Utility", 10)
-    )
-end)
-
---// =============================================
---// [5] SETTINGS                               [MODIFIED]
---// =============================================
-local Settings = {
-    Enabled        = AUTO_LOAD,
-    AimHead        = true,
-    ShowFOV        = false,
-    FOVRadius      = 150,
-    Smoothness     = 15,
-    TeamCheck      = false,
-    VisibleCheck   = false,
-
-    XSmooth        = 100,
-    YSmooth        = 100,
-    JumpSmoothing  = 50,
-
-    ClosestPart    = false,
-    ClosestPosition = false,
-
-    --// [NEW] SILENT AIM SETTINGS
-    SilentEnabled           = false,
-    SilentImproveAccuracy   = false,   -- enables velocity prediction
-    SilentAccuracyFactor    = 0.15,    -- velocity multiplier 0–0.5
-    SilentAntiKatana        = false,   -- skip melee-range targets
-    SilentRandomizeAimpoint = false,   -- add random offset to aim
-    SilentVisibleCheck      = false,   -- raycast wall check
-    SilentAutoShoot         = false,   -- auto click when target found
-    SilentHitchance         = 100,     -- % chance to replace aim
-    SilentFOV               = 200,     -- screen-distance filter px
-    SilentDynamicFOV        = false,   -- shrinks FOV when ADS
-    SilentIgnoreFOV         = false,   -- infinite FOV
-    SilentShowFOV           = false,   -- draw FOV circle
-}
-
---// =============================================
---// [6] CONFIG SYSTEM                          [MODIFIED]
---// =============================================
-local SAVE_FIELDS = {
-    "AimHead", "ShowFOV", "FOVRadius", "Smoothness",
-    "TeamCheck", "VisibleCheck",
-    "XSmooth", "YSmooth", "JumpSmoothing",
-    "ClosestPart", "ClosestPosition",
-    --// [NEW] silent aim config fields
-    "SilentEnabled", "SilentImproveAccuracy", "SilentAccuracyFactor",
-    "SilentAntiKatana", "SilentRandomizeAimpoint", "SilentVisibleCheck",
-    "SilentAutoShoot", "SilentHitchance", "SilentFOV",
-    "SilentDynamicFOV", "SilentIgnoreFOV", "SilentShowFOV",
-}
-
-local function saveConfig(name)
-    if not name or name == "" then return false, "Empty name" end
-    local data = {}
-    for _, key in ipairs(SAVE_FIELDS) do data[key] = Settings[key] end
-    local ok, err = pcall(function()
-        writefile(CONFIG_FOLDER .. "/" .. name .. ".json", HttpService:JSONEncode(data))
-    end)
-    return ok, err
+function v_u_10.GetFightersNotInDuel(p22) -- name: GetFightersNotInDuel
+	local v23 = {}
+	for _, v24 in pairs(p22.Objects) do
+		if not v24:Get("IsInDuel") then
+			table.insert(v23, v24)
+		end
+	end
+	return v23
 end
-
-local function loadConfig(name)
-    if not name or name == "" then return false, "Empty name" end
-    local path = CONFIG_FOLDER .. "/" .. name .. ".json"
-    local ok, err = pcall(function()
-        if not isfile(path) then error("Config not found") end
-        local data = HttpService:JSONDecode(readfile(path))
-        for _, key in ipairs(SAVE_FIELDS) do
-            if data[key] ~= nil then Settings[key] = data[key] end
-        end
-    end)
-    return ok, err
+function v_u_10.GetEntities(p25) -- name: GetEntities
+	local v26 = {}
+	for _, v27 in pairs(p25.Objects) do
+		if v27.Entity then
+			local v28 = v27.Entity
+			table.insert(v26, v28)
+		end
+	end
+	return v26
 end
-
-local function deleteConfig(name)
-    if not name or name == "" then return false end
-    local ok = pcall(function()
-        local path = CONFIG_FOLDER .. "/" .. name .. ".json"
-        if isfile(path) then delfile(path) end
-    end)
-    return ok
+function v_u_10.GetFighterModels(p29, p30) -- name: GetFighterModels
+	local v31 = {}
+	for _, v32 in pairs(p29.Objects) do
+		if v32.Entity and not (p30 and v32.IsLocalPlayer) then
+			local v33 = v32.Entity.Model
+			table.insert(v31, v33)
+		end
+	end
+	return v31
 end
-
-local function getConfigList()
-    local list = {}
-    pcall(function()
-        for _, path in ipairs(listfiles(CONFIG_FOLDER)) do
-            local name = path:match("([^/\\]+)%.json$")
-            if name then table.insert(list, name) end
-        end
-    end)
-    table.sort(list)
-    return list
+function v_u_10.GetWrap(p34, p35) -- name: GetWrap
+	for _, v36 in pairs(p34.Objects) do
+		local v37 = v36:GetItem(p35)
+		if v37 then
+			return v37:GetWrap()
+		end
+	end
 end
-
---// =============================================
---// [7] FOV CIRCLE (AIMBOT)
---// =============================================
-local fovCircle = nil
-pcall(function()
-    fovCircle = Drawing.new("Circle")
-    fovCircle.Thickness = 1.5; fovCircle.NumSides = 64
-    fovCircle.Radius = Settings.FOVRadius; fovCircle.Filled = false
-    fovCircle.Visible = false; fovCircle.ZIndex = 999
-    fovCircle.Transparency = 0.8; fovCircle.Color = Color3.fromRGB(255, 255, 255)
-end)
-
---// =============================================
---// [7.5] FOV CIRCLE (SILENT AIM)              [NEW]
---// blue circle — separate from aimbot FOV
---// supports dynamic FOV scaling
---// =============================================
-local silentFovCircle = nil
-pcall(function()
-    silentFovCircle = Drawing.new("Circle")
-    silentFovCircle.Thickness    = 1.5
-    silentFovCircle.NumSides     = 64
-    silentFovCircle.Radius       = Settings.SilentFOV
-    silentFovCircle.Filled       = false
-    silentFovCircle.Visible      = false
-    silentFovCircle.ZIndex       = 998
-    silentFovCircle.Transparency = 0.8
-    silentFovCircle.Color        = Color3.fromRGB(80, 150, 255)
-end)
-
---// =============================================
---// [8] UTILITY FUNCTIONS
---// =============================================
-
-local function getScreenCenter()
-    return Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+function v_u_10.WaitForFighter(p38, ...) -- name: WaitForFighter
+	while true do
+		local v39 = p38:GetFighter(...)
+		if v39 then
+			break
+		end
+		p38.ObjectAdded:Wait()
+	end
+	return v39
 end
-
-local function angleDiff(from, to)
-    local d = to - from
-    return ((d + math.pi) % (math.pi * 2)) - math.pi
+function v_u_10.WaitForLocalFighter(p40) -- name: WaitForLocalFighter
+	-- upvalues: (copy) v_u_3
+	return p40:WaitForFighter(v_u_3.LocalPlayer)
 end
-
-local function isSameTeam(player)
-    if not player or not LocalPlayer then return false end
-    local ok1, r1 = pcall(function()
-        if player.Team and LocalPlayer.Team then return player.Team == LocalPlayer.Team end
-        return false
-    end)
-    if ok1 and r1 then return true end
-    local ok2, r2 = pcall(function()
-        if player.TeamColor and LocalPlayer.TeamColor then return player.TeamColor == LocalPlayer.TeamColor end
-        return false
-    end)
-    if ok2 and r2 then return true end
-    return false
+function v_u_10.GenerateCharacterModel(p_u_41, p_u_42, p43) -- name: GenerateCharacterModel
+	-- upvalues: (copy) v_u_3, (copy) v_u_9
+	if p_u_41._character_model_cache[tostring(p_u_42)] then
+		return p_u_41._character_model_cache[tostring(p_u_42)]
+	end
+	local function v50() -- name: generate
+		-- upvalues: (ref) v_u_3, (copy) p_u_42, (copy) p_u_41
+		local v44, v45 = pcall(v_u_3.GetHumanoidDescriptionFromUserIdAsync, v_u_3, p_u_42)
+		if v44 then
+			v45.Torso = 15365012259
+			v45.LeftArm = 15365010034
+			v45.RightArm = 15365012263
+			v45.LeftLeg = 15365010038
+			v45.RightLeg = 15365010030
+			local v46, v47 = pcall(v_u_3.CreateHumanoidModelFromDescriptionAsync, v_u_3, v45, Enum.HumanoidRigType.R15)
+			if v46 then
+				p_u_41._preloaded_character_model = v47
+				local v48 = {
+					["Template"] = v47
+				}
+				local v49 = p_u_42
+				p_u_41._character_model_cache[tostring(v49)] = v48
+				return v48
+			end
+			warn("Failed to create humanoid model:", v47)
+		else
+			warn("Failed to fetch humanoid description:", v45)
+		end
+	end
+	if p43 then
+		return v50()
+	end
+	task.spawn(v50)
+	return p_u_41._character_model_cache[tostring(p_u_42)] or {
+		["Template"] = v_u_9
+	}
 end
-
-local function isVisible(targetPart)
-    if not targetPart then return false end
-    local ok, result = pcall(function()
-        local origin = Camera.CFrame.Position
-        local direction = (targetPart.Position - origin)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        local filterList = {Camera}
-        if LocalPlayer.Character then table.insert(filterList, LocalPlayer.Character) end
-        params.FilterDescendantsInstances = filterList
-        local hit = workspace:Raycast(origin, direction, params)
-        if hit then return hit.Instance:IsDescendantOf(targetPart.Parent) end
-        return true
-    end)
-    return ok and result or false
+function v_u_10._VerifyEntityLoop(p_u_51) -- name: _VerifyEntityLoop
+	-- upvalues: (copy) v_u_3, (copy) v_u_1
+	local function v53() -- name: is_inaccurate
+		-- upvalues: (copy) p_u_51, (ref) v_u_3
+		local v52 = not (p_u_51.LocalFighter:Get("IsInDuel") or p_u_51.LocalFighter:Get("IsInShootingRange"))
+		if v52 then
+			v52 = not (v_u_3.LocalPlayer.Character and p_u_51.LocalFighter.Entity) or p_u_51.LocalFighter.Entity.Model ~= v_u_3.LocalPlayer.Character
+		end
+		return v52
+	end
+	while wait(1) do
+		if v53() then
+			wait(2)
+			if v53() then
+				v_u_1.Remotes.Replication.Fighter.VerifyClientEntity:FireServer()
+				wait(10)
+			end
+		end
+	end
 end
-
---// =============================================
---// [9] CLOSEST PART SYSTEM
---// =============================================
-local BODY_PARTS = {
-    "Head", "HumanoidRootPart",
-    "UpperTorso", "LowerTorso",
-    "LeftUpperArm", "RightUpperArm",
-    "LeftLowerArm", "RightLowerArm",
-    "LeftUpperLeg", "RightUpperLeg",
-    "LeftLowerLeg", "RightLowerLeg",
-    "Torso", "Left Arm", "Right Arm",
-    "Left Leg", "Right Leg",
-}
-
-local function getClosestPart(character)
-    local center   = getScreenCenter()
-    local bestPart = nil
-    local bestDist = math.huge
-
-    for _, partName in ipairs(BODY_PARTS) do
-        local part = character:FindFirstChild(partName)
-        if not part or not part:IsA("BasePart") then continue end
-
-        local screenPos, onScreen = Camera:WorldToScreenPoint(part.Position)
-        if not onScreen then continue end
-
-        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-        if dist < bestDist then
-            bestDist = dist
-            bestPart = part
-        end
-    end
-
-    return bestPart
+function v_u_10._ConnectionLevelReplicationLoop(p54) -- name: _ConnectionLevelReplicationLoop
+	-- upvalues: (copy) v_u_5, (copy) v_u_1
+	while true do
+		repeat
+			wait(1)
+		until p54.LocalFighter and p54.LocalFighter:Get("IsInDuel")
+		local v55 = v_u_5:GetConnectionLevel((v_u_5:GetLocalConnectionPing()))
+		if v55 ~= p54._last_connection_level then
+			p54._last_connection_level = v55
+			v_u_1.Remotes.Replication.Fighter.UpdateConnectionLevel:FireServer(v55)
+		end
+	end
 end
-
---// =============================================
---// [10] CLOSEST POSITION SYSTEM
---// =============================================
-local function getClosestPointOnPart(part)
-    if not part then return nil end
-
-    local ok, result = pcall(function()
-        local camPos   = Camera.CFrame.Position
-        local partCF   = part.CFrame
-        local partSize = part.Size / 2
-
-        local localCamPos = partCF:PointToObjectSpace(camPos)
-
-        local clampedX = math.clamp(localCamPos.X, -partSize.X, partSize.X)
-        local clampedY = math.clamp(localCamPos.Y, -partSize.Y, partSize.Y)
-        local clampedZ = math.clamp(localCamPos.Z, -partSize.Z, partSize.Z)
-
-        local localClosest = Vector3.new(clampedX, clampedY, clampedZ)
-        return partCF:PointToWorldSpace(localClosest)
-    end)
-
-    return ok and result or part.Position
+function v_u_10._UpdateNetworkIDMap(p56) -- name: _UpdateNetworkIDMap
+	p56._network_id_map = {}
+	for _, v57 in pairs(p56.Objects) do
+		local v58 = v57:Get("DecodedNetworkID")
+		if v58 then
+			p56._network_id_map[v58] = v57
+		end
+	end
 end
-
---// =============================================
---// [11] CHECK IF TARGET IS AIRBORNE
---// =============================================
-local function isAirborne(character)
-    if not character then return false end
-
-    local ok, result = pcall(function()
-        local hum = character:FindFirstChildOfClass("Humanoid")
-        if not hum then return false end
-
-        local state = hum:GetState()
-        return state == Enum.HumanoidStateType.Freefall
-            or state == Enum.HumanoidStateType.Jumping
-            or state == Enum.HumanoidStateType.FallingDown
-    end)
-
-    return ok and result or false
+function v_u_10._FighterAdded(p_u_59, p_u_60) -- name: _FighterAdded
+	p_u_60:GetDataChangedSignal("DecodedNetworkID"):Connect(function()
+		-- upvalues: (copy) p_u_59
+		p_u_59:_UpdateNetworkIDMap()
+	end)
+	p_u_60.EntityAdded:Connect(function(p61)
+		-- upvalues: (copy) p_u_59, (copy) p_u_60
+		p_u_59._model_to_fighter[p61.Model] = p_u_60
+	end)
+	p_u_60.EntityRemoved:Connect(function(_)
+		-- upvalues: (copy) p_u_59, (copy) p_u_60
+		for v62, v63 in pairs(p_u_59._model_to_fighter) do
+			if v63 == p_u_60 then
+				p_u_59._model_to_fighter[v62] = nil
+			end
+		end
+	end)
+	if p_u_60.Entity and p_u_60.Entity.Model then
+		p_u_59._model_to_fighter[p_u_60.Entity.Model] = p_u_60
+	end
+	p_u_59._player_to_fighter[p_u_60.Player] = p_u_60
+	p_u_59:_UpdateNetworkIDMap()
 end
-
---// =============================================
---// [12] FIND TARGET (AIMBOT)
---// =============================================
-local function getTarget()
-    local center   = getScreenCenter()
-    local bestPart = nil
-    local bestDist = Settings.FOVRadius
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if Settings.TeamCheck and isSameTeam(player) then continue end
-
-        local char = player.Character
-        if not char then continue end
-
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then continue end
-
-        local part
-
-        if Settings.ClosestPart then
-            part = getClosestPart(char)
-        else
-            local partName = Settings.AimHead and "Head" or "HumanoidRootPart"
-            part = char:FindFirstChild(partName)
-        end
-
-        if not part then continue end
-        if Settings.VisibleCheck and not isVisible(part) then continue end
-
-        local screenPos, onScreen = Camera:WorldToScreenPoint(part.Position)
-        if not onScreen then continue end
-
-        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-        if dist < bestDist then
-            bestDist = dist
-            bestPart = part
-        end
-    end
-
-    return bestPart
+function v_u_10._ReplicateControls(p64) -- name: _ReplicateControls
+	-- upvalues: (copy) v_u_6, (copy) v_u_1
+	if p64.LocalFighter then
+		local v65 = 0.2 - (tick() - p64._last_controls_replicated_time)
+		local v66 = math.max(v65, 0.2)
+		task.delay(v66, function()
+			-- upvalues: (ref) v_u_6, (ref) v_u_1
+			local v67 = v_u_6.CurrentControls
+			if typeof(v67) == "string" then
+				v_u_1.Remotes.Replication.Fighter.SetControls:FireServer(v_u_6.CurrentControls)
+			end
+		end)
+	end
 end
-
---// =============================================
---// [12.5] SILENT AIM SYSTEM                   [NEW]
---//
---// hooks Utility.Raycast — Rivals calls this
---// with args[4]==999 for bullet raycasts
---// we replace args[3] (aim position) with the
---// predicted enemy head position
---//
---// the server trusts this raycast result so
---// bullets land on the enemy while your camera
---// stays completely untouched
---// =============================================
-
-local silentHookApplied     = false
-local silentOriginalRaycast = nil
-local lastAutoShootTime     = 0
-local AUTO_SHOOT_COOLDOWN   = 0.1
-
---// get all valid target characters (Rivals-specific)
---// checks workspace children for Humanoids and
---// also checks the HurtEffect folder for damaged chars
-local function silentGetTargets()
-    local targets = {}
-    for _, v in ipairs(workspace:GetChildren()) do
-        if v:FindFirstChildOfClass("Humanoid") then
-            table.insert(targets, v)
-        elseif v.Name == "HurtEffect" then
-            for _, p in ipairs(v:GetChildren()) do
-                if p.ClassName ~= "Highlight" then
-                    table.insert(targets, p)
-                end
-            end
-        end
-    end
-    return targets
+function v_u_10._CameraReplicationLoop(p68) -- name: _CameraReplicationLoop
+	-- upvalues: (copy) v_u_1, (copy) v_u_7, (copy) v_u_5
+	local function v70(p69) -- name: send
+		-- upvalues: (ref) v_u_1
+		if not p69 or utf8.len(p69) then
+			v_u_1.Remotes.Replication.Fighter.UpdateCameraRotation:FireServer(p69, nil)
+		end
+	end
+	local v71 = false
+	local v72 = nil
+	while true do
+		while true do
+			wait(0.1)
+			if p68.LocalFighter and (p68.LocalFighter:Get("IsSpectating") and v_u_7:GetPublicState()) then
+				break
+			end
+			if not v71 then
+				task.defer(v70, v_u_5:EncodeCameraRotation(Vector2.zero))
+				v71 = true
+			end
+		end
+		local v73 = v_u_5:EncodeCameraRotation(v_u_7.Rotation)
+		if v71 or v73 ~= v72 then
+			task.defer(v70, v73)
+			v72 = v73
+			v71 = false
+		else
+			v72 = v73
+			v71 = false
+		end
+	end
 end
-
---// get predicted aim position for a character
---// mirrors original thingidk() but adds:
---//   • velocity prediction (Improve Accuracy)
---//   • random offset (Randomize Aimpoint)
-local function silentGetAimPos(character)
-    local h    = character:FindFirstChild("Head")
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not h then return nil end
-
-    -- velocity prediction multiplier
-    -- original code: root.Velocity * 0 (no prediction)
-    -- Improve Accuracy ON: root.Velocity * AccuracyFactor
-    local velMult = 0
-    if Settings.SilentImproveAccuracy then
-        velMult = Settings.SilentAccuracyFactor
-    end
-
-    local pos
-    if h and root then
-        pos = h.Position + (root.Velocity * velMult)
-    elseif h then
-        pos = h.Position
-    else
-        return nil
-    end
-
-    -- randomize aimpoint: slight random offset per call
-    -- makes aim look more natural / less robotic
-    if Settings.SilentRandomizeAimpoint then
-        pos = pos + Vector3.new(
-            (math.random() - 0.5) * 0.7,
-            (math.random() - 0.5) * 0.4,
-            (math.random() - 0.5) * 0.7
-        )
-    end
-
-    return pos
+function v_u_10._HookLocalFighter(p_u_74) -- name: _HookLocalFighter
+	-- upvalues: (copy) v_u_7, (copy) v_u_1, (copy) v_u_2
+	p_u_74.LocalFighter = p_u_74:WaitForLocalFighter()
+	local function v75() -- name: update_third_person_overide
+		-- upvalues: (ref) v_u_7, (copy) p_u_74
+		v_u_7:SetThirdPersonOverride(p_u_74.LocalFighter:Get("ThirdPersonOverride"))
+	end
+	p_u_74.LocalFighter:GetDataChangedSignal("ThirdPersonOverride"):Connect(v75)
+	task.defer(v75)
+	local v_u_76 = 0
+	local v_u_77 = Instance.new("BindableEvent")
+	v_u_77.Event:Connect(function()
+		-- upvalues: (ref) v_u_1
+		v_u_1.Remotes.Replication.Fighter.ResetCharacter:FireServer()
+	end)
+	local function v86() -- name: update_reset_button
+		-- upvalues: (ref) v_u_76, (ref) v_u_2, (copy) p_u_74, (copy) v_u_77
+		v_u_76 = v_u_76 + 1
+		local v78 = v_u_76
+		while v_u_76 == v78 do
+			local v79 = pcall
+			local v80 = v_u_2.SetCore
+			local v81 = v_u_2
+			local v82 = "ResetButtonCallback"
+			local v83 = not p_u_74.LocalFighter:Get("IsInDuel")
+			if v83 then
+				v83 = v_u_77
+			end
+			local v84, v85 = v79(v80, v81, v82, v83)
+			if v84 then
+				break
+			end
+			warn("Failed to set reset button callback", v85)
+			wait(0.1)
+		end
+	end
+	p_u_74.LocalFighter:GetDataChangedSignal("IsInDuel"):Connect(v86)
+	task.defer(v86)
+	p_u_74:_ReplicateControls()
+	task.defer(p_u_74._CameraReplicationLoop, p_u_74)
+	task.defer(p_u_74._ConnectionLevelReplicationLoop, p_u_74)
+	task.defer(p_u_74._VerifyEntityLoop, p_u_74)
 end
-
---// get effective FOV radius accounting for
---// Ignore FOV and Dynamic FOV settings
-local function silentGetEffectiveFOV()
-    if Settings.SilentIgnoreFOV then
-        return math.huge
-    end
-    local fov = Settings.SilentFOV
-    if Settings.SilentDynamicFOV then
-        -- shrink FOV proportionally when ADS (camera FieldOfView decreases)
-        fov = fov * (Camera.FieldOfView / 70)
-    end
-    return fov
+function v_u_10._Setup(p87) -- name: _Setup
+	-- upvalues: (copy) v_u_4, (copy) v_u_3
+	function p87._reject_object_added_serial_callback(p88)
+		-- upvalues: (ref) v_u_4, (ref) v_u_3
+		local v89 = not p88[v_u_4:ToEnum("Player")]
+		if v89 then
+			v89 = not v_u_3:GetPlayerByUserId(p88[v_u_4:ToEnum("UserID")])
+		end
+		return v89
+	end
 end
-
---// find the closest valid target within FOV
---// applies: team check, anti-katana, visible check, FOV filter
-local function silentFindTarget()
-    local cam      = workspace.CurrentCamera
-    local center   = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-    local localChar = LocalPlayer.Character
-    if not localChar then return nil end
-
-    local fovLimit   = silentGetEffectiveFOV()
-    local bestTarget = nil
-    local bestDist   = math.huge
-
-    for _, character in ipairs(silentGetTargets()) do
-        if character == localChar then continue end
-
-        local hum = character:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then continue end
-
-        -- team check (reuse aimbot setting)
-        local targetPlayer = Players:GetPlayerFromCharacter(character)
-        if targetPlayer and Settings.TeamCheck and isSameTeam(targetPlayer) then continue end
-
-        local root = character:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
-
-        -- anti-katana: skip targets within melee range (15 studs)
-        -- prevents wasting bullets on katana deflectors
-        if Settings.SilentAntiKatana then
-            local localRoot = localChar:FindFirstChild("HumanoidRootPart")
-            if localRoot then
-                local d = (root.Position - localRoot.Position).Magnitude
-                if d < 15 then continue end
-            end
-        end
-
-        -- visible check: raycast wall check
-        if Settings.SilentVisibleCheck then
-            local head = character:FindFirstChild("Head")
-            if head and not isVisible(head) then continue end
-        end
-
-        local aimPos = silentGetAimPos(character)
-        if not aimPos then continue end
-
-        local screenPos, onScreen = cam:WorldToViewportPoint(aimPos)
-        if not onScreen then continue end
-
-        -- FOV distance filter
-        local dist = (center - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
-        if dist < fovLimit and dist < bestDist then
-            bestTarget  = character
-            bestDist    = dist
-        end
-    end
-
-    return bestTarget
+function v_u_10._Init(p_u_90) -- name: _Init
+	-- upvalues: (copy) v_u_6, (copy) v_u_1, (copy) v_u_5
+	p_u_90.ObjectAdded:Connect(function(p91)
+		-- upvalues: (copy) p_u_90
+		p_u_90:_FighterAdded(p91)
+	end)
+	p_u_90.ObjectRemoved:Connect(function(p92)
+		-- upvalues: (copy) p_u_90
+		for v93, v94 in pairs(p_u_90._player_to_fighter) do
+			if v94 == p92 then
+				p_u_90._model_to_fighter[v93] = nil
+			end
+		end
+		for v95, v96 in pairs(p_u_90._model_to_fighter) do
+			if v96 == p92 then
+				p_u_90._model_to_fighter[v95] = nil
+			end
+		end
+	end)
+	v_u_6.ControlsChanged:Connect(function()
+		-- upvalues: (copy) p_u_90
+		p_u_90:_ReplicateControls()
+	end)
+	v_u_1.Remotes.Replication.Fighter.UpdateCameraRotations.OnClientEvent:Connect(function(p97)
+		-- upvalues: (ref) v_u_5, (copy) p_u_90
+		local v98 = v_u_5:DecodeCameraRotationBulk(p97)
+		for _, v99 in pairs(v98) do
+			local v100, v101, v102 = table.unpack(v99)
+			local v103 = p_u_90:GetFighterFromNetworkID(v100)
+			if v103 then
+				v103:SetReplicate("CameraRotation", v_u_5:FromXYToCameraRotation(v101, v102))
+			end
+		end
+	end)
+	for _, v104 in pairs(p_u_90.Objects) do
+		task.spawn(p_u_90._FighterAdded, p_u_90, v104)
+	end
+	p_u_90:_Setup()
+	task.defer(p_u_90._HookLocalFighter, p_u_90)
 end
-
---// auto-shoot: simulate mouse click
-local function silentAutoShoot()
-    pcall(function() mouse1click() end)
-end
-
---// apply the Utility.Raycast hook
---// runs once — the hook internally checks Settings.SilentEnabled
---// so toggling ON/OFF is instant without re-hooking
-local function applySilentHook()
-    if silentHookApplied then return true end
-    if not UtilityModule then return false end
-    if not UtilityModule.Raycast then return false end
-
-    local ok = pcall(function()
-        silentOriginalRaycast = UtilityModule.Raycast
-
-        UtilityModule.Raycast = function(...)
-            local args = {...}
-
-            -- only intercept bullet raycasts (args[4] == 999)
-            if args[4] == 999 and Settings.SilentEnabled then
-                -- hitchance: random % check
-                if math.random(1, 100) <= Settings.SilentHitchance then
-                    local target = silentFindTarget()
-                    if target then
-                        local pos = silentGetAimPos(target)
-                        if pos then
-                            args[3] = pos
-                        end
-                    end
-                end
-            end
-
-            return silentOriginalRaycast(unpack(args))
-        end
-    end)
-
-    if ok then silentHookApplied = true end
-    return ok
-end
-
--- apply hook immediately — safe because it checks SilentEnabled inside
-applySilentHook()
-
---// =============================================
---// [13] MAIN RENDER LOOP                      [MODIFIED]
---// =============================================
-local renderConnection
-
-renderConnection = RunService.RenderStepped:Connect(function()
-    Camera = workspace.CurrentCamera
-
-    -- aimbot FOV circle
-    if fovCircle then
-        pcall(function()
-            fovCircle.Position = getScreenCenter()
-            fovCircle.Radius   = Settings.FOVRadius
-            fovCircle.Visible  = Settings.ShowFOV
-        end)
-    end
-
-    --// [NEW] silent aim FOV circle with dynamic scaling
-    if silentFovCircle then
-        pcall(function()
-            silentFovCircle.Position = getScreenCenter()
-            silentFovCircle.Radius   = silentGetEffectiveFOV()
-            silentFovCircle.Visible  = Settings.SilentShowFOV and Settings.SilentEnabled
-        end)
-    end
-
-    --// [NEW] auto shoot: click when valid target exists
-    if Settings.SilentEnabled and Settings.SilentAutoShoot then
-        local now = tick()
-        if now - lastAutoShootTime >= AUTO_SHOOT_COOLDOWN then
-            local target = silentFindTarget()
-            if target then
-                lastAutoShootTime = now
-                silentAutoShoot()
-            end
-        end
-    end
-
-    -- aimbot camera control (unchanged)
-    if not Settings.Enabled then return end
-    if not CameraController then return end
-
-    local targetPart = getTarget()
-    if not targetPart then return end
-
-    pcall(function()
-        local camPos = Camera.CFrame.Position
-
-        local aimPos
-        if Settings.ClosestPosition then
-            aimPos = getClosestPointOnPart(targetPart)
-        else
-            aimPos = targetPart.Position
-        end
-
-        local dirUnit = (aimPos - camPos).Unit
-
-        local targetPitch = math.asin(dirUnit.Y)
-        local targetYaw   = math.atan2(-dirUnit.X, -dirUnit.Z)
-
-        local baseAlpha = Settings.Smoothness / 100
-
-        local xFactor = Settings.XSmooth / 100
-        local yFactor = Settings.YSmooth / 100
-
-        local yawAlpha   = baseAlpha * xFactor
-        local pitchAlpha = baseAlpha * yFactor
-
-        if isAirborne(targetPart.Parent) then
-            local jumpFactor = Settings.JumpSmoothing / 100
-            yawAlpha   = yawAlpha   * jumpFactor
-            pitchAlpha = pitchAlpha * jumpFactor
-        end
-
-        yawAlpha   = math.clamp(yawAlpha, 0, 1)
-        pitchAlpha = math.clamp(pitchAlpha, 0, 1)
-
-        local current = CameraController.Rotation
-
-        local newPitch = current.X + (targetPitch - current.X) * pitchAlpha
-        local newYaw   = current.Y + angleDiff(current.Y, targetYaw) * yawAlpha
-
-        CameraController:SetRotation(Vector2.new(newPitch, newYaw))
-    end)
-end)
-
---// =============================================
---// [14] UI COLORS                             [MODIFIED]
---// =============================================
-local C = {
-    bg          = Color3.fromRGB(14, 14, 24),
-    surface     = Color3.fromRGB(22, 22, 38),
-    surfaceHi   = Color3.fromRGB(32, 32, 52),
-    accent      = Color3.fromRGB(120, 60, 230),
-    accentDim   = Color3.fromRGB(75, 30, 145),
-    accentGlow  = Color3.fromRGB(155, 85, 255),
-    text        = Color3.fromRGB(225, 225, 240),
-    textDim     = Color3.fromRGB(120, 120, 150),
-    toggleOff   = Color3.fromRGB(45, 45, 65),
-    knob        = Color3.fromRGB(240, 240, 250),
-    sliderTrack = Color3.fromRGB(38, 38, 58),
-    danger      = Color3.fromRGB(210, 50, 50),
-    success     = Color3.fromRGB(60, 210, 90),
-    section     = Color3.fromRGB(150, 85, 255),
-    floatBtn    = Color3.fromRGB(120, 60, 230),
-    floatBtnHi  = Color3.fromRGB(155, 85, 255),
-    inputBg     = Color3.fromRGB(30, 30, 50),
-    inputBorder = Color3.fromRGB(70, 50, 140),
-    btnGreen    = Color3.fromRGB(40, 160, 70),
-    btnBlue     = Color3.fromRGB(40, 100, 200),
-    btnRed      = Color3.fromRGB(180, 45, 45),
-    warning     = Color3.fromRGB(255, 180, 50),
-    info        = Color3.fromRGB(100, 180, 255),
-    --// [NEW] blue accent for silent aim section
-    silentAccent    = Color3.fromRGB(60, 130, 255),
-    silentAccentDim = Color3.fromRGB(30, 80, 180),
-    silentAccentGlow= Color3.fromRGB(100, 170, 255),
-    silentToggleOn  = Color3.fromRGB(50, 120, 240),
-}
-
---// =============================================
---// [15] SCREENGUI
---// =============================================
-pcall(function()
-    local old = CoreGui:FindFirstChild("RivalsAimbotGui")
-    if old then old:Destroy() end
-end)
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RivalsAimbotGui"; screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.ResetOnSpawn = false; screenGui.DisplayOrder = 100
-
-pcall(function()
-    if syn and syn.protect_gui then syn.protect_gui(screenGui)
-    elseif protectgui then protectgui(screenGui) end
-end)
-
-screenGui.Parent = CoreGui
-
---// =============================================
---// [16] MAIN WINDOW + FLOATING BUTTON
---// =============================================
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainWindow"; mainFrame.Size = UDim2.new(0, 270, 0, 520)
-mainFrame.Position = UDim2.new(0.5, -135, 0.04, 0)
-mainFrame.BackgroundColor3 = C.bg; mainFrame.BorderSizePixel = 0
-mainFrame.Visible = not SILENT_LOAD; mainFrame.Parent = screenGui
-
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 14)
-
-local mStroke = Instance.new("UIStroke"); mStroke.Color = C.accentDim
-mStroke.Thickness = 1.5; mStroke.Transparency = 0.3; mStroke.Parent = mainFrame
-
-local floatBtn = Instance.new("TextButton")
-floatBtn.Size = UDim2.new(0, 46, 0, 46); floatBtn.Position = UDim2.new(0, 14, 0.45, 0)
-floatBtn.BackgroundColor3 = C.floatBtn; floatBtn.Text = SILENT_LOAD and "⚡" or "✕"
-floatBtn.TextColor3 = Color3.new(1,1,1); floatBtn.TextSize = 20
-floatBtn.Font = Enum.Font.GothamBold; floatBtn.BorderSizePixel = 0
-floatBtn.AutoButtonColor = false; floatBtn.ZIndex = 10; floatBtn.Parent = screenGui
-
-Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 23)
-local fs1 = Instance.new("UIStroke"); fs1.Color = C.accentGlow; fs1.Thickness = 2; fs1.Parent = floatBtn
-local fs2 = Instance.new("UIStroke"); fs2.Color = C.accentGlow; fs2.Thickness = 4; fs2.Transparency = 0.7; fs2.Parent = floatBtn
-
-floatBtn.MouseButton1Click:Connect(function()
-    mainFrame.Visible = not mainFrame.Visible
-    floatBtn.Text = mainFrame.Visible and "✕" or "⚡"
-    local ti = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    TweenService:Create(floatBtn, ti, {BackgroundColor3 = C.floatBtnHi}):Play()
-    task.delay(0.15, function()
-        pcall(function() TweenService:Create(floatBtn, ti, {BackgroundColor3 = C.floatBtn}):Play() end)
-    end)
-end)
-
-local floatDragging, floatDragStart, floatStartPos = false, Vector2.zero, UDim2.new()
-floatBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        floatDragging = true; floatDragStart = Vector2.new(input.Position.X, input.Position.Y); floatStartPos = floatBtn.Position
-    end
-end)
-
---// =============================================
---// [17] TITLE BAR
---// =============================================
-local titleBar = Instance.new("Frame"); titleBar.Size = UDim2.new(1, 0, 0, 44)
-titleBar.BackgroundColor3 = C.surface; titleBar.BorderSizePixel = 0; titleBar.ZIndex = 5; titleBar.Parent = mainFrame
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 14)
-
-local tbFix = Instance.new("Frame"); tbFix.Size = UDim2.new(1, 0, 0, 14); tbFix.Position = UDim2.new(0, 0, 1, -14)
-tbFix.BackgroundColor3 = C.surface; tbFix.BorderSizePixel = 0; tbFix.ZIndex = 5; tbFix.Parent = titleBar
-
-local aLine = Instance.new("Frame"); aLine.Size = UDim2.new(1, -24, 0, 2); aLine.Position = UDim2.new(0, 12, 1, 0)
-aLine.BackgroundColor3 = C.accent; aLine.BorderSizePixel = 0; aLine.ZIndex = 6; aLine.Parent = titleBar
-
-local tLbl = Instance.new("TextLabel"); tLbl.Size = UDim2.new(1, -56, 1, 0); tLbl.Position = UDim2.new(0, 16, 0, 0)
-tLbl.BackgroundTransparency = 1; tLbl.Text = "⚡ Rivals Aimbot"; tLbl.TextColor3 = C.text; tLbl.TextSize = 15
-tLbl.Font = Enum.Font.GothamBold; tLbl.TextXAlignment = Enum.TextXAlignment.Left; tLbl.ZIndex = 6; tLbl.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton"); closeBtn.Size = UDim2.new(0, 28, 0, 28); closeBtn.Position = UDim2.new(1, -36, 0, 8)
-closeBtn.BackgroundColor3 = C.danger; closeBtn.Text = "—"; closeBtn.TextColor3 = Color3.new(1,1,1)
-closeBtn.TextSize = 16; closeBtn.Font = Enum.Font.GothamBold; closeBtn.BorderSizePixel = 0; closeBtn.ZIndex = 7; closeBtn.Parent = titleBar
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
-
-closeBtn.MouseButton1Click:Connect(function() mainFrame.Visible = false; floatBtn.Text = "⚡" end)
-
---// =============================================
---// [18] SCROLL CONTENT
---// =============================================
-local content = Instance.new("ScrollingFrame"); content.Size = UDim2.new(1, 0, 1, -50); content.Position = UDim2.new(0, 0, 0, 50)
-content.BackgroundTransparency = 1; content.BorderSizePixel = 0; content.ScrollBarThickness = 3
-content.ScrollBarImageColor3 = C.accent; content.ScrollBarImageTransparency = 0.5
-content.CanvasSize = UDim2.new(0,0,0,0); content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-content.ScrollingDirection = Enum.ScrollingDirection.Y; content.Parent = mainFrame
-
-Instance.new("UIListLayout", content).SortOrder = Enum.SortOrder.LayoutOrder; content:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0, 4)
-local cPad = Instance.new("UIPadding"); cPad.PaddingTop = UDim.new(0, 6); cPad.PaddingBottom = UDim.new(0, 14)
-cPad.PaddingLeft = UDim.new(0, 10); cPad.PaddingRight = UDim.new(0, 10); cPad.Parent = content
-
---// =============================================
---// [19] GLOBAL INPUT
---// =============================================
-local windowDragging, windowDragStart, windowStartPos = false, Vector2.zero, UDim2.new()
-local activeSlider = nil
-
-titleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        windowDragging = true; windowDragStart = Vector2.new(input.Position.X, input.Position.Y); windowStartPos = mainFrame.Position
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
-    if windowDragging then
-        local d = Vector2.new(input.Position.X, input.Position.Y) - windowDragStart
-        mainFrame.Position = UDim2.new(windowStartPos.X.Scale, windowStartPos.X.Offset + d.X, windowStartPos.Y.Scale, windowStartPos.Y.Offset + d.Y)
-    end
-    if floatDragging then
-        local d = Vector2.new(input.Position.X, input.Position.Y) - floatDragStart
-        floatBtn.Position = UDim2.new(floatStartPos.X.Scale, floatStartPos.X.Offset + d.X, floatStartPos.Y.Scale, floatStartPos.Y.Offset + d.Y)
-    end
-    if activeSlider then
-        local s = activeSlider; local tX = s.track.AbsolutePosition.X; local tW = s.track.AbsoluteSize.X
-        local pct = math.clamp((input.Position.X - tX) / tW, 0, 1)
-        local val = s.snap(s.min + pct * (s.max - s.min))
-        pct = math.clamp((val - s.min) / (s.max - s.min), 0, 1)
-        s.fill.Size = UDim2.new(pct, 0, 1, 0); s.thumb.Position = UDim2.new(pct, -9, 0.5, -9)
-        s.label.Text = s.name .. ": " .. string.format(s.fmt, val); s.value = val
-        if s.callback then s.callback(val) end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-        windowDragging = false; floatDragging = false; activeSlider = nil
-    end
-end)
-
---// =============================================
---// [20] UI BUILDERS                           [MODIFIED]
---// =============================================
-local layoutOrder = 0
-local function nextOrder() layoutOrder = layoutOrder + 1; return layoutOrder end
-
-local allSliders = {}
-local allToggles = {}
-
-local function createSection(text)
-    local c = Instance.new("Frame"); c.Size = UDim2.new(1, 0, 0, 26); c.BackgroundTransparency = 1
-    c.LayoutOrder = nextOrder(); c.Parent = content
-    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 1, 0); l.Position = UDim2.new(0, 4, 0, 0)
-    l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = C.section; l.TextSize = 11
-    l.Font = Enum.Font.GothamBold; l.TextXAlignment = Enum.TextXAlignment.Left; l.Parent = c
-end
-
---// [NEW] section header with custom color
-local function createColoredSection(text, color)
-    local c = Instance.new("Frame"); c.Size = UDim2.new(1, 0, 0, 26); c.BackgroundTransparency = 1
-    c.LayoutOrder = nextOrder(); c.Parent = content
-    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 1, 0); l.Position = UDim2.new(0, 4, 0, 0)
-    l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = color or C.section; l.TextSize = 11
-    l.Font = Enum.Font.GothamBold; l.TextXAlignment = Enum.TextXAlignment.Left; l.Parent = c
-end
-
-local function createDivider()
-    local c = Instance.new("Frame"); c.Size = UDim2.new(1, 0, 0, 10); c.BackgroundTransparency = 1
-    c.LayoutOrder = nextOrder(); c.Parent = content
-    local l = Instance.new("Frame"); l.Size = UDim2.new(1, 0, 0, 1); l.Position = UDim2.new(0, 0, 0.5, 0)
-    l.BackgroundColor3 = C.surfaceHi; l.BorderSizePixel = 0; l.Parent = c
-end
-
-local function createStatus(text, color)
-    local c = Instance.new("Frame"); c.Size = UDim2.new(1, 0, 0, 22); c.BackgroundTransparency = 1
-    c.LayoutOrder = nextOrder(); c.Parent = content
-    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 1, 0); l.Position = UDim2.new(0, 4, 0, 0)
-    l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = color; l.TextSize = 12
-    l.Font = Enum.Font.GothamMedium; l.TextXAlignment = Enum.TextXAlignment.Left; l.Parent = c
-    return l
-end
-
-local function createToggle(name, settingKey, default, callback, accentOverride)
-    local toggleAccent = accentOverride or C.accent
-
-    local row = Instance.new("Frame"); row.Size = UDim2.new(1, 0, 0, 40); row.BackgroundColor3 = C.surface
-    row.BorderSizePixel = 0; row.LayoutOrder = nextOrder(); row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1, -70, 1, 0); lbl.Position = UDim2.new(0, 12, 0, 0)
-    lbl.BackgroundTransparency = 1; lbl.Text = name; lbl.TextColor3 = C.text; lbl.TextSize = 13
-    lbl.Font = Enum.Font.GothamMedium; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = row
-
-    local pill = Instance.new("Frame"); pill.Size = UDim2.new(0, 44, 0, 24); pill.Position = UDim2.new(1, -56, 0.5, -12)
-    pill.BackgroundColor3 = default and toggleAccent or C.toggleOff; pill.BorderSizePixel = 0; pill.Parent = row
-    Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
-
-    local knobF = Instance.new("Frame"); knobF.Size = UDim2.new(0, 20, 0, 20)
-    knobF.Position = default and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-    knobF.BackgroundColor3 = C.knob; knobF.BorderSizePixel = 0; knobF.Parent = pill
-    Instance.new("UICorner", knobF).CornerRadius = UDim.new(1, 0)
-    local ks = Instance.new("UIStroke"); ks.Color = Color3.new(0,0,0); ks.Thickness = 1; ks.Transparency = 0.85; ks.Parent = knobF
-
-    local state = default
-    local tweenI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-    local function setVis(v)
-        knobF.Position = v and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-        pill.BackgroundColor3 = v and toggleAccent or C.toggleOff
-    end
-
-    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundTransparency = 1
-    btn.Text = ""; btn.ZIndex = 2; btn.Parent = row
-
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(knobF, tweenI, { Position = state and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2) }):Play()
-        TweenService:Create(pill, tweenI, { BackgroundColor3 = state and toggleAccent or C.toggleOff }):Play()
-        if callback then callback(state) end
-    end)
-
-    if settingKey then
-        allToggles[settingKey] = {
-            setState = function(v) state = v; setVis(v) end,
-            getState = function() return state end,
-            label    = lbl,
-        }
-    end
-
-    return lbl
-end
-
---// [NEW] toggle with inline status badge (e.g. "Always" / "None")
-local function createToggleWithBadge(name, settingKey, default, badgeOff, badgeOn, callback, accentOverride)
-    local toggleAccent = accentOverride or C.accent
-
-    local row = Instance.new("Frame"); row.Size = UDim2.new(1, 0, 0, 40); row.BackgroundColor3 = C.surface
-    row.BorderSizePixel = 0; row.LayoutOrder = nextOrder(); row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(0.5, -6, 1, 0); lbl.Position = UDim2.new(0, 12, 0, 0)
-    lbl.BackgroundTransparency = 1; lbl.Text = name; lbl.TextColor3 = C.text; lbl.TextSize = 13
-    lbl.Font = Enum.Font.GothamMedium; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = row
-
-    -- badge label
-    local badge = Instance.new("TextLabel"); badge.Size = UDim2.new(0, 50, 0, 18)
-    badge.Position = UDim2.new(1, -110, 0.5, -9)
-    badge.BackgroundColor3 = default and toggleAccent or C.surfaceHi; badge.BorderSizePixel = 0
-    badge.Text = default and badgeOn or badgeOff
-    badge.TextColor3 = Color3.new(1,1,1); badge.TextSize = 10
-    badge.Font = Enum.Font.GothamBold; badge.Parent = row
-    Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 6)
-
-    local pill = Instance.new("Frame"); pill.Size = UDim2.new(0, 44, 0, 24); pill.Position = UDim2.new(1, -56, 0.5, -12)
-    pill.BackgroundColor3 = default and toggleAccent or C.toggleOff; pill.BorderSizePixel = 0; pill.Parent = row
-    Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
-
-    local knobF = Instance.new("Frame"); knobF.Size = UDim2.new(0, 20, 0, 20)
-    knobF.Position = default and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-    knobF.BackgroundColor3 = C.knob; knobF.BorderSizePixel = 0; knobF.Parent = pill
-    Instance.new("UICorner", knobF).CornerRadius = UDim.new(1, 0)
-    local ks = Instance.new("UIStroke"); ks.Color = Color3.new(0,0,0); ks.Thickness = 1; ks.Transparency = 0.85; ks.Parent = knobF
-
-    local state = default
-    local tweenI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-    local function setVis(v)
-        knobF.Position = v and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-        pill.BackgroundColor3 = v and toggleAccent or C.toggleOff
-        badge.Text = v and badgeOn or badgeOff
-        badge.BackgroundColor3 = v and toggleAccent or C.surfaceHi
-    end
-
-    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundTransparency = 1
-    btn.Text = ""; btn.ZIndex = 2; btn.Parent = row
-
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(knobF, tweenI, { Position = state and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2) }):Play()
-        TweenService:Create(pill, tweenI, { BackgroundColor3 = state and toggleAccent or C.toggleOff }):Play()
-        TweenService:Create(badge, tweenI, { BackgroundColor3 = state and toggleAccent or C.surfaceHi }):Play()
-        badge.Text = state and badgeOn or badgeOff
-        if callback then callback(state) end
-    end)
-
-    if settingKey then
-        allToggles[settingKey] = {
-            setState = function(v) state = v; setVis(v) end,
-            getState = function() return state end,
-        }
-    end
-end
-
---// [NEW] toggle with inline reset button (↩)
-local function createToggleWithReset(name, settingKey, default, callback, resetCallback, accentOverride)
-    local toggleAccent = accentOverride or C.accent
-
-    local row = Instance.new("Frame"); row.Size = UDim2.new(1, 0, 0, 40); row.BackgroundColor3 = C.surface
-    row.BorderSizePixel = 0; row.LayoutOrder = nextOrder(); row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1, -106, 1, 0); lbl.Position = UDim2.new(0, 12, 0, 0)
-    lbl.BackgroundTransparency = 1; lbl.Text = name; lbl.TextColor3 = C.text; lbl.TextSize = 13
-    lbl.Font = Enum.Font.GothamMedium; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = row
-
-    -- reset button
-    local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(0, 28, 0, 24)
-    resetBtn.Position = UDim2.new(1, -92, 0.5, -12)
-    resetBtn.BackgroundColor3 = C.surfaceHi; resetBtn.Text = "↩"
-    resetBtn.TextColor3 = C.textDim; resetBtn.TextSize = 14; resetBtn.Font = Enum.Font.GothamBold
-    resetBtn.BorderSizePixel = 0; resetBtn.ZIndex = 3; resetBtn.Parent = row
-    Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 6)
-
-    local pill = Instance.new("Frame"); pill.Size = UDim2.new(0, 44, 0, 24); pill.Position = UDim2.new(1, -56, 0.5, -12)
-    pill.BackgroundColor3 = default and toggleAccent or C.toggleOff; pill.BorderSizePixel = 0; pill.Parent = row
-    Instance.new("UICorner", pill).CornerRadius = UDim.new(1, 0)
-
-    local knobF = Instance.new("Frame"); knobF.Size = UDim2.new(0, 20, 0, 20)
-    knobF.Position = default and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-    knobF.BackgroundColor3 = C.knob; knobF.BorderSizePixel = 0; knobF.Parent = pill
-    Instance.new("UICorner", knobF).CornerRadius = UDim.new(1, 0)
-    local ks = Instance.new("UIStroke"); ks.Color = Color3.new(0,0,0); ks.Thickness = 1; ks.Transparency = 0.85; ks.Parent = knobF
-
-    local state = default
-    local tweenI = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-    local function setVis(v)
-        knobF.Position = v and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2)
-        pill.BackgroundColor3 = v and toggleAccent or C.toggleOff
-    end
-
-    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundTransparency = 1
-    btn.Text = ""; btn.ZIndex = 2; btn.Parent = row
-
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(knobF, tweenI, { Position = state and UDim2.new(0, 22, 0, 2) or UDim2.new(0, 2, 0, 2) }):Play()
-        TweenService:Create(pill, tweenI, { BackgroundColor3 = state and toggleAccent or C.toggleOff }):Play()
-        if callback then callback(state) end
-    end)
-
-    resetBtn.MouseButton1Click:Connect(function()
-        state = false
-        TweenService:Create(knobF, tweenI, { Position = UDim2.new(0, 2, 0, 2) }):Play()
-        TweenService:Create(pill, tweenI, { BackgroundColor3 = C.toggleOff }):Play()
-        TweenService:Create(resetBtn, TweenInfo.new(0.1), { BackgroundColor3 = C.silentAccent }):Play()
-        task.delay(0.15, function()
-            pcall(function() TweenService:Create(resetBtn, TweenInfo.new(0.1), { BackgroundColor3 = C.surfaceHi }):Play() end)
-        end)
-        if resetCallback then resetCallback() end
-    end)
-
-    if settingKey then
-        allToggles[settingKey] = {
-            setState = function(v) state = v; setVis(v) end,
-            getState = function() return state end,
-        }
-    end
-end
-
-local function createSlider(name, settingKey, min, max, default, step, callback, accentOverride)
-    local sliderAccent = accentOverride or C.accent
-    step = step or 1; local decimals = 0
-    local ss = tostring(step); local dot = ss:find("%%.")
-    if not dot then dot = ss:find("%.") end
-    if dot then decimals = #ss - dot end
-    local fmt = "%." .. decimals .. "f"
-
-    local function snap(raw)
-        local v = math.floor(raw / step + 0.5) * step
-        return math.clamp(tonumber(string.format(fmt, v)), min, max)
-    end
-
-    local initPct = math.clamp((default - min) / (max - min), 0, 1)
-    local row = Instance.new("Frame"); row.Size = UDim2.new(1, 0, 0, 52); row.BackgroundColor3 = C.surface
-    row.BorderSizePixel = 0; row.LayoutOrder = nextOrder(); row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
-
-    local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1, -24, 0, 20); lbl.Position = UDim2.new(0, 12, 0, 4)
-    lbl.BackgroundTransparency = 1; lbl.Text = name..": "..string.format(fmt, default); lbl.TextColor3 = C.textDim
-    lbl.TextSize = 12; lbl.Font = Enum.Font.GothamMedium; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = row
-
-    local track = Instance.new("Frame"); track.Size = UDim2.new(1, -24, 0, 6); track.Position = UDim2.new(0, 12, 0, 32)
-    track.BackgroundColor3 = C.sliderTrack; track.BorderSizePixel = 0; track.Parent = row
-    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
-
-    local fill = Instance.new("Frame"); fill.Size = UDim2.new(initPct, 0, 1, 0); fill.BackgroundColor3 = sliderAccent
-    fill.BorderSizePixel = 0; fill.Parent = track; Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-
-    local thumb = Instance.new("Frame"); thumb.Size = UDim2.new(0, 18, 0, 18); thumb.Position = UDim2.new(initPct, -9, 0.5, -9)
-    thumb.BackgroundColor3 = C.knob; thumb.BorderSizePixel = 0; thumb.ZIndex = 3; thumb.Parent = track
-    Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
-    local ts = Instance.new("UIStroke"); ts.Color = sliderAccent; ts.Thickness = 2; ts.Parent = thumb
-
-    local data = { track=track, fill=fill, thumb=thumb, label=lbl, name=name, min=min, max=max, snap=snap, fmt=fmt, value=default, callback=callback }
-
-    function data:setValueFromCode(val)
-        val = snap(val); local pct = math.clamp((val - min) / (max - min), 0, 1)
-        fill.Size = UDim2.new(pct, 0, 1, 0); thumb.Position = UDim2.new(pct, -9, 0.5, -9)
-        lbl.Text = name..": "..string.format(fmt, val); data.value = val
-        if callback then callback(val) end
-    end
-
-    local touchArea = Instance.new("TextButton"); touchArea.Size = UDim2.new(1, 12, 0, 34)
-    touchArea.Position = UDim2.new(0, -6, 0.5, -17); touchArea.BackgroundTransparency = 1
-    touchArea.Text = ""; touchArea.ZIndex = 4; touchArea.Parent = track
-
-    touchArea.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            activeSlider = data
-            local tX = track.AbsolutePosition.X; local tW = track.AbsoluteSize.X
-            local pct = math.clamp((input.Position.X - tX) / tW, 0, 1)
-            local val = snap(min + pct * (max - min)); pct = math.clamp((val - min) / (max - min), 0, 1)
-            fill.Size = UDim2.new(pct, 0, 1, 0); thumb.Position = UDim2.new(pct, -9, 0.5, -9)
-            lbl.Text = name..": "..string.format(fmt, val); data.value = val
-            if callback then callback(val) end
-        end
-    end)
-
-    if settingKey then allSliders[settingKey] = data end
-    return data
-end
-
-local function createInput(placeholder)
-    local row = Instance.new("Frame"); row.Size = UDim2.new(1, 0, 0, 38); row.BackgroundColor3 = C.inputBg
-    row.BorderSizePixel = 0; row.LayoutOrder = nextOrder(); row.Parent = content
-    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
-    local st = Instance.new("UIStroke"); st.Color = C.inputBorder; st.Thickness = 1.5; st.Parent = row
-
-    local box = Instance.new("TextBox"); box.Size = UDim2.new(1, -16, 1, 0); box.Position = UDim2.new(0, 8, 0, 0)
-    box.BackgroundTransparency = 1; box.Text = ""; box.PlaceholderText = placeholder
-    box.PlaceholderColor3 = C.textDim; box.TextColor3 = C.text; box.TextSize = 13
-    box.Font = Enum.Font.GothamMedium; box.TextXAlignment = Enum.TextXAlignment.Left
-    box.ClearTextOnFocus = false; box.Parent = row
-    return box
-end
-
-local function refreshUI()
-    for key, slider in pairs(allSliders) do
-        if Settings[key] ~= nil then slider:setValueFromCode(Settings[key]) end
-    end
-    for key, toggle in pairs(allToggles) do
-        if Settings[key] ~= nil then toggle.setState(Settings[key]) end
-    end
-end
-
---// =============================================
---// [21] BUILD UI — AIMBOT SECTION (unchanged)
---// =============================================
-
-if CameraController then createStatus("✓ CameraController connected", C.success)
-else createStatus("✗ CameraController not found", C.warning) end
-
---// [NEW] silent aim hook status
-if UtilityModule and silentHookApplied then
-    createStatus("✓ Utility.Raycast hooked", C.success)
-elseif UtilityModule then
-    createStatus("⚠ Utility found, hook pending", C.warning)
-else
-    createStatus("✗ Utility module not found", C.danger)
-end
-
-if SILENT_LOAD then createStatus("🔇 Silent Load", C.textDim) end
-if AUTO_LOAD then createStatus("⚡ Auto Load ON", C.accentGlow) end
-
-createDivider()
-createSection("TARGETING")
-
-createToggle("Aimbot", "Enabled", AUTO_LOAD, function(v) Settings.Enabled = v end)
-createToggle("Aim At Head", "AimHead", true, function(v) Settings.AimHead = v end)
-createToggle("Show FOV", "ShowFOV", false, function(v) Settings.ShowFOV = v end)
-createSlider("FOV Radius", "FOVRadius", 10, 500, 150, 1, function(v) Settings.FOVRadius = v end)
-createSlider("Smoothness", "Smoothness", 1, 100, 15, 1, function(v) Settings.Smoothness = v end)
-
-createDivider()
-createSection("CHECKS")
-
-createToggle("Team Check", "TeamCheck", false, function(v) Settings.TeamCheck = v end)
-createToggle("Visible Check", "VisibleCheck", false, function(v) Settings.VisibleCheck = v end)
-
-createDivider()
-createSection("DELAY POSITION")
-
-createSlider("X Smooth", "XSmooth", 1, 100, 100, 1, function(v) Settings.XSmooth = v end)
-createSlider("Y Smooth", "YSmooth", 1, 100, 100, 1, function(v) Settings.YSmooth = v end)
-createSlider("Jump Smoothing", "JumpSmoothing", 1, 100, 50, 1, function(v) Settings.JumpSmoothing = v end)
-
-createDivider()
-createSection("ADVANCED TARGETING")
-
-createToggle("Closest Part", "ClosestPart", false, function(v) Settings.ClosestPart = v end)
-createToggle("Closest Position", "ClosestPosition", false, function(v) Settings.ClosestPosition = v end)
-
---// =============================================
---// [21.5] SILENT AIM UI                       [NEW]
---//
---// blue-accented section with all controls
---// for the Utility.Raycast silent aim system
---// =============================================
-
-createDivider()
-
--- blue divider line for visual separation
-do
-    local blueLine = Instance.new("Frame"); blueLine.Size = UDim2.new(1, 0, 0, 3)
-    blueLine.BackgroundColor3 = C.silentAccent; blueLine.BorderSizePixel = 0
-    blueLine.LayoutOrder = nextOrder(); blueLine.Parent = content
-    Instance.new("UICorner", blueLine).CornerRadius = UDim.new(1, 0)
-end
-
-createColoredSection("SILENT AIM", C.silentAccent)
-
--- hook status label that updates when toggled
-local silentHookStatusLabel = createStatus(
-    silentHookApplied and "✓ Hook: active" or "⏳ Hook: waiting",
-    silentHookApplied and C.success or C.textDim
-)
-
--- Enable Silent toggle with Always/None badge
-createToggleWithBadge(
-    "Silent Aim", "SilentEnabled", false,
-    "None", "Always",
-    function(v)
-        Settings.SilentEnabled = v
-        if v and not silentHookApplied then
-            local ok = applySilentHook()
-            if ok then
-                silentHookStatusLabel.Text = "✓ Hook: active"
-                silentHookStatusLabel.TextColor3 = C.success
-            else
-                silentHookStatusLabel.Text = "✗ Hook: failed"
-                silentHookStatusLabel.TextColor3 = C.danger
-            end
-        elseif v and silentHookApplied then
-            silentHookStatusLabel.Text = "✓ Hook: active"
-            silentHookStatusLabel.TextColor3 = C.success
-        else
-            silentHookStatusLabel.Text = silentHookApplied and "✓ Hook: installed (aim off)" or "⏳ Hook: waiting"
-            silentHookStatusLabel.TextColor3 = silentHookApplied and C.warning or C.textDim
-        end
-    end,
-    C.silentToggleOn
-)
-
--- Improve Accuracy BETA
-createToggle("Improve Accuracy BETA", "SilentImproveAccuracy", false, function(v)
-    Settings.SilentImproveAccuracy = v
-    -- if enabling and factor is 0, set to default 0.15
-    if v and Settings.SilentAccuracyFactor == 0 then
-        Settings.SilentAccuracyFactor = 0.15
-        if allSliders["SilentAccuracyFactor"] then
-            allSliders["SilentAccuracyFactor"]:setValueFromCode(0.15)
-        end
-    end
-end, C.silentToggleOn)
-
--- Accuracy Factor slider
-createSlider("Accuracy Factor", "SilentAccuracyFactor", 0, 0.5, 0.15, 0.005, function(v)
-    Settings.SilentAccuracyFactor = v
-end, C.silentAccent)
-
--- Anti Katana
-createToggle("Anti Katana", "SilentAntiKatana", false, function(v)
-    Settings.SilentAntiKatana = v
-end, C.silentToggleOn)
-
--- Randomize Aimpoint with ↩ reset button
-createToggleWithReset(
-    "Randomize Aimpoint", "SilentRandomizeAimpoint", false,
-    function(v) Settings.SilentRandomizeAimpoint = v end,
-    function()
-        -- reset callback: turn off randomize
-        Settings.SilentRandomizeAimpoint = false
-        if allToggles["SilentRandomizeAimpoint"] then
-            allToggles["SilentRandomizeAimpoint"].setState(false)
-        end
-    end,
-    C.silentToggleOn
-)
-
--- Visible Check (for silent aim)
-createToggle("Visible Check", "SilentVisibleCheck", false, function(v)
-    Settings.SilentVisibleCheck = v
-end, C.silentToggleOn)
-
--- Auto Shoot
-createToggle("Auto Shoot", "SilentAutoShoot", false, function(v)
-    Settings.SilentAutoShoot = v
-end, C.silentToggleOn)
-
--- Hitchance slider
-createSlider("Hitchance %", "SilentHitchance", 0, 100, 100, 1, function(v)
-    Settings.SilentHitchance = v
-end, C.silentAccent)
-
--- Field of View slider
-createSlider("Field Of View px", "SilentFOV", 0, 600, 200, 1, function(v)
-    Settings.SilentFOV = v
-end, C.silentAccent)
-
--- Dynamic FOV
-createToggle("Dynamic FOV", "SilentDynamicFOV", false, function(v)
-    Settings.SilentDynamicFOV = v
-end, C.silentToggleOn)
-
--- Ignore FOV
-createToggle("Ignore FOV", "SilentIgnoreFOV", false, function(v)
-    Settings.SilentIgnoreFOV = v
-end, C.silentToggleOn)
-
--- Show FOV Circle
-createToggle("Show FOV Circle", "SilentShowFOV", false, function(v)
-    Settings.SilentShowFOV = v
-end, C.silentToggleOn)
-
--- bottom blue line
-do
-    local blueLine2 = Instance.new("Frame"); blueLine2.Size = UDim2.new(1, 0, 0, 3)
-    blueLine2.BackgroundColor3 = C.silentAccent; blueLine2.BorderSizePixel = 0
-    blueLine2.LayoutOrder = nextOrder(); blueLine2.Parent = content
-    Instance.new("UICorner", blueLine2).CornerRadius = UDim.new(1, 0)
-end
-
---// =============================================
---// CONFIG SECTION (unchanged)
---// =============================================
-createDivider()
-createSection("CONFIG")
-
-local configStatusLabel = createStatus("", C.textDim)
-local configInput = createInput("Config name...")
-
-local btnRow = Instance.new("Frame"); btnRow.Size = UDim2.new(1, 0, 0, 34)
-btnRow.BackgroundTransparency = 1; btnRow.LayoutOrder = nextOrder(); btnRow.Parent = content
-
-local saveB = Instance.new("TextButton"); saveB.Size = UDim2.new(0.48, 0, 1, 0)
-saveB.BackgroundColor3 = C.btnGreen; saveB.Text = "💾 Save"; saveB.TextColor3 = Color3.new(1,1,1)
-saveB.TextSize = 13; saveB.Font = Enum.Font.GothamBold; saveB.BorderSizePixel = 0; saveB.Parent = btnRow
-Instance.new("UICorner", saveB).CornerRadius = UDim.new(0, 8)
-
-local loadB = Instance.new("TextButton"); loadB.Size = UDim2.new(0.48, 0, 1, 0); loadB.Position = UDim2.new(0.52, 0, 0, 0)
-loadB.BackgroundColor3 = C.btnBlue; loadB.Text = "📂 Load"; loadB.TextColor3 = Color3.new(1,1,1)
-loadB.TextSize = 13; loadB.Font = Enum.Font.GothamBold; loadB.BorderSizePixel = 0; loadB.Parent = btnRow
-Instance.new("UICorner", loadB).CornerRadius = UDim.new(0, 8)
-
-local delB = Instance.new("TextButton"); delB.Size = UDim2.new(1, 0, 0, 30)
-delB.BackgroundColor3 = C.btnRed; delB.Text = "🗑️ Delete"; delB.TextColor3 = Color3.new(1,1,1)
-delB.TextSize = 12; delB.Font = Enum.Font.GothamBold; delB.BorderSizePixel = 0
-delB.LayoutOrder = nextOrder(); delB.Parent = content
-Instance.new("UICorner", delB).CornerRadius = UDim.new(0, 8)
-
-local configListLabel = createStatus("Saved: loading...", C.textDim)
-
-local function updateList()
-    local l = getConfigList()
-    configListLabel.Text = #l == 0 and "Saved: none" or "Saved: " .. table.concat(l, ", ")
-end
-updateList()
-
-local function flash(t, c) if configStatusLabel then configStatusLabel.Text = t; configStatusLabel.TextColor3 = c end end
-
-saveB.MouseButton1Click:Connect(function()
-    local n = configInput.Text
-    if n == "" then flash("❌ Enter a name", C.danger); return end
-    local ok = saveConfig(n)
-    flash(ok and "✅ Saved: "..n or "❌ Save failed", ok and C.success or C.danger)
-    updateList()
-end)
-
-loadB.MouseButton1Click:Connect(function()
-    local n = configInput.Text
-    if n == "" then flash("❌ Enter name to load", C.danger); return end
-    local ok = loadConfig(n)
-    if ok then refreshUI(); flash("✅ Loaded: "..n, C.success) else flash("❌ Not found", C.danger) end
-end)
-
-delB.MouseButton1Click:Connect(function()
-    local n = configInput.Text
-    if n == "" then flash("❌ Enter name to delete", C.danger); return end
-    local ok = deleteConfig(n)
-    flash(ok and "🗑️ Deleted: "..n or "❌ Failed", ok and C.warning or C.danger)
-    updateList()
-end)
-
---// =============================================
---// [22] CLEANUP                               [MODIFIED]
---// =============================================
-local function fullCleanup()
-    pcall(function() renderConnection:Disconnect() end)
-    pcall(function() if fovCircle then fovCircle.Visible = false; fovCircle:Remove(); fovCircle = nil end end)
-
-    --// [NEW] cleanup silent aim FOV circle
-    pcall(function()
-        if silentFovCircle then
-            silentFovCircle.Visible = false
-            silentFovCircle:Remove()
-            silentFovCircle = nil
-        end
-    end)
-
-    --// [NEW] restore original Utility.Raycast
-    pcall(function()
-        if silentHookApplied and silentOriginalRaycast and UtilityModule then
-            UtilityModule.Raycast = silentOriginalRaycast
-            silentHookApplied     = false
-            silentOriginalRaycast = nil
-        end
-    end)
-
-    pcall(function() screenGui:Destroy() end)
-    getgenv().RivalsAimbotCleanup = nil
-end
-
-getgenv().RivalsAimbotCleanup = fullCleanup
+return v_u_10._new()
