@@ -1,351 +1,972 @@
-game:GetService("StarterPlayer").StarterPlayerScripts.Controllers.FighterController
-local v_u_1 = game:GetService("ReplicatedStorage")
-local v_u_2 = game:GetService("StarterGui")
-game:GetService("RunService")
-local v_u_3 = game:GetService("Players")
-require(v_u_1.Modules.CONSTANTS)
-local v_u_4 = require(v_u_1.Modules.EnumLibrary)
-local v_u_5 = require(v_u_1.Modules.Utility)
-require(v_u_3.LocalPlayer.PlayerScripts.Controllers.PlayerDataController)
-local v_u_6 = require(v_u_3.LocalPlayer.PlayerScripts.Controllers.ControlsController)
-local v_u_7 = require(v_u_3.LocalPlayer.PlayerScripts.Controllers.CameraController)
-local v_u_8 = require(v_u_3.LocalPlayer.PlayerScripts.Modules.ReplicatedController)
-local v_u_9 = v_u_3.LocalPlayer.PlayerScripts.Assets:WaitForChild("Misc"):WaitForChild("DefaultCharacter")
-local v_u_10 = setmetatable({}, v_u_8)
-v_u_10.__index = v_u_10
-function v_u_10._new() -- name: _new
-	-- upvalues: (copy) v_u_8, (copy) v_u_10
-	local v11 = v_u_8.new("Fighter")
-	local v12 = v_u_10
-	local v13 = setmetatable(v11, v12)
-	v13.LocalFighter = nil
-	v13._network_id_map = {}
-	v13._last_connection_level = nil
-	v13._player_to_fighter = {}
-	v13._model_to_fighter = {}
-	v13._last_controls_replicated_time = 0
-	v13._character_model_cache = {}
-	v13:_Init()
-	return v13
+-- ============================================================
+-- RIVALS CHEAT SUITE â€” Built by Axiom
+-- LinoriaLib UI | Aimbot | Silent Aim | Anti-Aim | Ragebot
+-- Skin Changer | Bullet Tracer | Triggerbot | Utility ESP
+-- ============================================================
+
+local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
+local Library     = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+
+-- ============================================================
+-- SERVICES
+-- ============================================================
+local Players         = game:GetService("Players")
+local RunService      = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService    = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer     = Players.LocalPlayer
+local Camera          = workspace.CurrentCamera
+
+-- ============================================================
+-- REMOTES  (exact paths from source scan)
+-- ============================================================
+local Remotes           = ReplicatedStorage:WaitForChild("Remotes",10)
+local FighterRemotes    = Remotes and Remotes:WaitForChild("Replication",5)
+FighterRemotes          = FighterRemotes and FighterRemotes:WaitForChild("Fighter",5)
+
+local R_UpdateCameraRotations = FighterRemotes and FighterRemotes:FindFirstChild("UpdateCameraRotations")
+local R_UseItem               = FighterRemotes and FighterRemotes:FindFirstChild("UseItemFeedback")
+local R_Replicate             = FighterRemotes and FighterRemotes:FindFirstChild("Replicate")
+local R_EquipItemFeedback     = FighterRemotes and FighterRemotes:FindFirstChild("EquipItemFeedback")
+local R_EquipCosmetic         = Remotes and Remotes:FindFirstChild("Data") and Remotes.Data:FindFirstChild("EquipCosmetic")
+
+-- ============================================================
+-- MODULE REFS
+-- ============================================================
+local Modules       = ReplicatedStorage:WaitForChild("Modules",10)
+local CosmeticLib   = Modules and require(Modules:FindFirstChild("CosmeticLibrary"))
+local EnumLib       = Modules and require(Modules:FindFirstChild("EnumLibrary"))
+local ItemLib       = Modules and require(Modules:FindFirstChild("ItemLibrary"))
+local ConceptsLib   = Modules and require(Modules:FindFirstChild("ConceptsLibrary"))
+
+-- ============================================================
+-- HELPER UTILS
+-- ============================================================
+local function getEnemies()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            table.insert(list, p)
+        end
+    end
+    return list
 end
-function v_u_10.GetFighter(p14, p15) -- name: GetFighter
-	-- upvalues: (copy) v_u_3
-	local v16 = p14._player_to_fighter[p15] or p14._model_to_fighter[p15]
-	if v16 then
-		return v16
-	elseif p15 then
-		if typeof(p15) == "Instance" then
-			if not p15:IsA("Player") then
-				return p14:GetFighter(v_u_3:GetPlayerFromCharacter(p15))
-			end
-			for v17, v18 in pairs(p14.Objects) do
-				if v18.Player == p15 then
-					return v18, v17
-				end
-			end
-			return nil
-		end
-		if typeof(p15) == "number" then
-			return p14:GetFighter(v_u_3:GetPlayerByUserId(p15))
-		end
-		local v19 = "Argument 1 invalid, expected a Player or a Model or nil, got " .. tostring(p15) .. " (type: " .. (typeof(p15) == "Instance" and p15.ClassName or typeof(p15)) .. ")"
-		assert(false, v19)
-	end
+
+local function getClosestPlayerToMouse(maxDist)
+    maxDist = maxDist or 300
+    local closestPlayer, closestDist = nil, maxDist
+    local mousePos = UserInputService:GetMouseLocation()
+    for _, p in ipairs(getEnemies()) do
+        local char = p.Character
+        if char then
+            local head = char:FindFirstChild("Head")
+            if head then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestPlayer = p
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
 end
-function v_u_10.GetFighterFromNetworkID(p20, p21) -- name: GetFighterFromNetworkID
-	return p20._network_id_map[p21]
+
+local function getClosestPlayerWorldspace()
+    local localChar = LocalPlayer.Character
+    if not localChar then return nil end
+    local localRoot = localChar:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return nil end
+    local closest, dist = nil, math.huge
+    for _, p in ipairs(getEnemies()) do
+        local char = p.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local d = (root.Position - localRoot.Position).Magnitude
+                if d < dist then
+                    dist = d
+                    closest = p
+                end
+            end
+        end
+    end
+    return closest
 end
-function v_u_10.GetFightersNotInDuel(p22) -- name: GetFightersNotInDuel
-	local v23 = {}
-	for _, v24 in pairs(p22.Objects) do
-		if not v24:Get("IsInDuel") then
-			table.insert(v23, v24)
-		end
-	end
-	return v23
+
+local function getBodyPart(player, part)
+    if not player or not player.Character then return nil end
+    return player.Character:FindFirstChild(part)
+        or player.Character:FindFirstChild("HumanoidRootPart")
 end
-function v_u_10.GetEntities(p25) -- name: GetEntities
-	local v26 = {}
-	for _, v27 in pairs(p25.Objects) do
-		if v27.Entity then
-			local v28 = v27.Entity
-			table.insert(v26, v28)
-		end
-	end
-	return v26
+
+local function predictPosition(root, hitbox, pingMs)
+    if not root then return root and root.Position end
+    local ping = pingMs or (workspace:FindFirstChild("ServerPing") and workspace.ServerPing.Value or 80)
+    local vel  = root.AssemblyLinearVelocity
+    return root.Position + vel * (ping / 1000)
 end
-function v_u_10.GetFighterModels(p29, p30) -- name: GetFighterModels
-	local v31 = {}
-	for _, v32 in pairs(p29.Objects) do
-		if v32.Entity and not (p30 and v32.IsLocalPlayer) then
-			local v33 = v32.Entity.Model
-			table.insert(v31, v33)
-		end
-	end
-	return v31
+
+-- ============================================================
+-- STATE TABLE
+-- ============================================================
+local State = {
+    -- Aimbot
+    AimbotEnabled   = false,
+    AimbotBone      = "Head",
+    AimbotFOV       = 200,
+    AimbotSmooth    = 0.15,
+    AimbotPrediction = true,
+    AimbotVisFOVCirc = true,
+    -- Silent Aim
+    SilentAimEnabled = false,
+    SilentBone       = "HumanoidRootPart",
+    -- Anti Aim
+    AntiAimEnabled   = false,
+    AntiAimMode      = "Spin",
+    AntiAimYaw       = 180,
+    AntiAimTick      = 0,
+    -- Triggerbot
+    TriggerbotEnabled = false,
+    TriggerbotDelay   = 0.05,
+    -- Ragebot
+    RagebotEnabled    = false,
+    RagebotMode       = "Closest",
+    RagebotDesync     = true,
+    -- Bullet Tracers
+    TracerEnabled   = false,
+    TracerStyle     = "Line",
+    TracerColor     = Color3.fromRGB(255,50,50),
+    TracerFadeTime  = 1.5,
+    TracerObjects   = {},
+    -- Utility ESP
+    UtilityESPEnabled = false,
+    UtilityESPObjects = {},
+    -- Skin Changer
+    SkinChangerEnabled = false,
+    SelectedSkinWrap   = nil,
+    SelectedCharm      = nil,
+    -- Anti-Aim internal
+    _lastSentRotation = CFrame.identity,
+}
+
+-- ============================================================
+-- WINDOW & TABS
+-- ============================================================
+local Window = Library:CreateWindow({
+    Title     = "Rivals",
+    Center    = true,
+    AutoShow  = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2,
+})
+
+local Tabs = {
+    Aimbot      = Window:AddTab("Aimbot"),
+    Ragebot     = Window:AddTab("Ragebot"),
+    Visuals     = Window:AddTab("Visuals"),
+    SkinChanger = Window:AddTab("Skin Changer"),
+    Settings    = Window:AddTab("UI Settings"),
+}
+
+-- ============================================================
+-- TAB: AIMBOT
+-- ============================================================
+local AimbotBox = Tabs.Aimbot:AddLeftGroupbox("Aimbot")
+local SilentBox = Tabs.Aimbot:AddRightGroupbox("Silent Aim")
+local AntiAimBox = Tabs.Aimbot:AddLeftGroupbox("Anti-Aim")
+local TriggerBox = Tabs.Aimbot:AddRightGroupbox("Triggerbot")
+
+-- Aimbot Toggle
+AimbotBox:AddToggle("AimbotToggle", {
+    Text    = "Enable Aimbot",
+    Default = false,
+})
+Toggles.AimbotToggle:OnChanged(function()
+    State.AimbotEnabled = Toggles.AimbotToggle.Value
+end)
+
+-- Aimbot Bone
+AimbotBox:AddDropdown("AimbotBoneDD", {
+    Text   = "Target Bone",
+    Values = {"Head", "HumanoidRootPart", "UpperTorso"},
+    Default = 1,
+})
+Options.AimbotBoneDD:OnChanged(function()
+    State.AimbotBone = Options.AimbotBoneDD.Value
+end)
+
+-- FOV Slider
+AimbotBox:AddSlider("AimbotFOVSlider", {
+    Text    = "Aimbot FOV",
+    Default = 200,
+    Min     = 10,
+    Max     = 800,
+    Rounding = 0,
+})
+Options.AimbotFOVSlider:OnChanged(function()
+    State.AimbotFOV = Options.AimbotFOVSlider.Value
+end)
+
+-- Smooth Slider
+AimbotBox:AddSlider("AimbotSmoothSlider", {
+    Text    = "Smooth",
+    Default = 15,
+    Min     = 1,
+    Max     = 100,
+    Rounding = 0,
+    Suffix  = "%",
+})
+Options.AimbotSmoothSlider:OnChanged(function()
+    State.AimbotSmooth = Options.AimbotSmoothSlider.Value / 100
+end)
+
+-- Prediction toggle
+AimbotBox:AddToggle("AimbotPredToggle", {
+    Text    = "Bullet Prediction",
+    Default = true,
+})
+Toggles.AimbotPredToggle:OnChanged(function()
+    State.AimbotPrediction = Toggles.AimbotPredToggle.Value
+end)
+
+-- FOV Circle
+AimbotBox:AddToggle("AimbotFOVCirc", {
+    Text    = "Show FOV Circle",
+    Default = true,
+})
+Toggles.AimbotFOVCirc:OnChanged(function()
+    State.AimbotVisFOVCirc = Toggles.AimbotFOVCirc.Value
+end)
+
+-- FOV Circle Drawing
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible   = false
+FOVCircle.Thickness = 1
+FOVCircle.NumSides  = 64
+FOVCircle.Radius    = 200
+FOVCircle.Color     = Color3.fromRGB(255,255,255)
+FOVCircle.Filled    = false
+
+-- Silent Aim
+SilentBox:AddToggle("SilentAimToggle", {
+    Text    = "Enable Silent Aim",
+    Default = false,
+})
+Toggles.SilentAimToggle:OnChanged(function()
+    State.SilentAimEnabled = Toggles.SilentAimToggle.Value
+end)
+
+SilentBox:AddDropdown("SilentBoneDD", {
+    Text   = "Silent Target Bone",
+    Values = {"Head", "HumanoidRootPart", "UpperTorso"},
+    Default = 1,
+})
+Options.SilentBoneDD:OnChanged(function()
+    State.SilentBone = Options.SilentBoneDD.Value
+end)
+
+SilentBox:AddLabel("Mode: Always (no keybind)")
+
+-- Anti-Aim
+AntiAimBox:AddToggle("AntiAimToggle", {
+    Text    = "Enable Anti-Aim",
+    Default = false,
+})
+Toggles.AntiAimToggle:OnChanged(function()
+    State.AntiAimEnabled = Toggles.AntiAimToggle.Value
+end)
+
+AntiAimBox:AddDropdown("AntiAimModeDD", {
+    Text   = "Anti-Aim Mode",
+    Values = {"Spin", "Jitter", "Static180", "Backward"},
+    Default = 1,
+})
+Options.AntiAimModeDD:OnChanged(function()
+    State.AntiAimMode = Options.AntiAimModeDD.Value
+end)
+
+AntiAimBox:AddSlider("AntiAimYawSlider", {
+    Text    = "Yaw Offset",
+    Default = 180,
+    Min     = 0,
+    Max     = 360,
+    Rounding = 0,
+})
+Options.AntiAimYawSlider:OnChanged(function()
+    State.AntiAimYaw = Options.AntiAimYawSlider.Value
+end)
+
+-- Triggerbot
+TriggerBox:AddToggle("TriggerbotToggle", {
+    Text    = "Enable Triggerbot",
+    Default = false,
+})
+Toggles.TriggerbotToggle:OnChanged(function()
+    State.TriggerbotEnabled = Toggles.TriggerbotToggle.Value
+end)
+
+TriggerBox:AddSlider("TriggerbotDelaySlider", {
+    Text    = "Fire Delay (ms)",
+    Default = 50,
+    Min     = 0,
+    Max     = 500,
+    Rounding = 0,
+    Suffix  = "ms",
+})
+Options.TriggerbotDelaySlider:OnChanged(function()
+    State.TriggerbotDelay = Options.TriggerbotDelaySlider.Value / 1000
+end)
+
+TriggerBox:AddLabel("Mode: Always (no keybind)")
+
+-- ============================================================
+-- TAB: RAGEBOT
+-- ============================================================
+local RagebotBox   = Tabs.Ragebot:AddLeftGroupbox("Ragebot (Kill All)")
+local TracerBox    = Tabs.Ragebot:AddRightGroupbox("Bullet Tracers")
+
+RagebotBox:AddToggle("RagebotToggle", {
+    Text    = "Enable Ragebot",
+    Default = false,
+})
+Toggles.RagebotToggle:OnChanged(function()
+    State.RagebotEnabled = Toggles.RagebotToggle.Value
+end)
+
+RagebotBox:AddDropdown("RagebotModeDD", {
+    Text   = "Target Mode",
+    Values = {"Closest", "LowestHP", "Sequential"},
+    Default = 1,
+})
+Options.RagebotModeDD:OnChanged(function()
+    State.RagebotMode = Options.RagebotModeDD.Value
+end)
+
+RagebotBox:AddToggle("RagebotDesyncToggle", {
+    Text    = "Teleport Desync",
+    Default = true,
+    Tooltip = "Teleports client-side to enemy while shooting then returns",
+})
+Toggles.RagebotDesyncToggle:OnChanged(function()
+    State.RagebotDesync = Toggles.RagebotDesyncToggle.Value
+end)
+
+RagebotBox:AddToggle("RagebotInstantAim", {
+    Text    = "Instant Aim (StartAiming)",
+    Default = true,
+})
+
+RagebotBox:AddLabel("Mode: Rage (auto-fire all enemies)")
+
+-- Bullet Tracers
+TracerBox:AddToggle("TracerToggle", {
+    Text    = "Enable Tracers",
+    Default = false,
+})
+Toggles.TracerToggle:OnChanged(function()
+    State.TracerEnabled = Toggles.TracerToggle.Value
+end)
+
+TracerBox:AddDropdown("TracerStyleDD", {
+    Text   = "Tracer Style",
+    Values = {"Line", "Lightning", "Dragon", "Sonic", "Minecraft"},
+    Default = 1,
+})
+Options.TracerStyleDD:OnChanged(function()
+    State.TracerStyle = Options.TracerStyleDD.Value
+end)
+
+TracerBox:AddLabel("Color"):AddColorPicker("TracerColorPicker", {
+    Default = Color3.fromRGB(255, 50, 50),
+})
+Options.TracerColorPicker:OnChanged(function()
+    State.TracerColor = Options.TracerColorPicker.Value
+end)
+
+TracerBox:AddSlider("TracerFadeSlider", {
+    Text    = "Fade Time (s)",
+    Default = 15,
+    Min     = 1,
+    Max     = 50,
+    Rounding = 0,
+})
+Options.TracerFadeSlider:OnChanged(function()
+    State.TracerFadeTime = Options.TracerFadeSlider.Value / 10
+end)
+
+-- ============================================================
+-- TAB: VISUALS (ESP + Utility ESP)
+-- ============================================================
+local UtilityESPBox = Tabs.Visuals:AddLeftGroupbox("Utility ESP")
+
+UtilityESPBox:AddToggle("UtilESPToggle", {
+    Text    = "Enable Utility ESP",
+    Default = false,
+})
+Toggles.UtilESPToggle:OnChanged(function()
+    State.UtilityESPEnabled = Toggles.UtilESPToggle.Value
+    if not State.UtilityESPEnabled then
+        for _, d in pairs(State.UtilityESPObjects) do
+            pcall(function() d:Remove() end)
+        end
+        State.UtilityESPObjects = {}
+    end
+end)
+
+UtilityESPBox:AddLabel("Shows logo + distance of thrown utilities")
+
+-- ============================================================
+-- TAB: SKIN CHANGER
+-- ============================================================
+local SkinBox  = Tabs.SkinChanger:AddLeftGroupbox("Weapon Skin (Wrap)")
+local CharmBox = Tabs.SkinChanger:AddRightGroupbox("Charm")
+
+local skinNames = {"None"}
+local skinMap   = {[1] = nil}
+
+if CosmeticLib and CosmeticLib.Cosmetics then
+    for id, data in pairs(CosmeticLib.Cosmetics) do
+        if data.Type == "Wrap" or data.Type == "SkinWrap" or (type(id) == "string" and id:lower():find("wrap")) then
+            table.insert(skinNames, tostring(id))
+            skinMap[#skinNames] = id
+        end
+    end
 end
-function v_u_10.GetWrap(p34, p35) -- name: GetWrap
-	for _, v36 in pairs(p34.Objects) do
-		local v37 = v36:GetItem(p35)
-		if v37 then
-			return v37:GetWrap()
-		end
-	end
+if #skinNames == 1 then
+    -- fallback: list all cosmetics
+    if CosmeticLib and CosmeticLib.Cosmetics then
+        for id, _ in pairs(CosmeticLib.Cosmetics) do
+            table.insert(skinNames, tostring(id))
+            skinMap[#skinNames] = id
+        end
+    end
 end
-function v_u_10.WaitForFighter(p38, ...) -- name: WaitForFighter
-	while true do
-		local v39 = p38:GetFighter(...)
-		if v39 then
-			break
-		end
-		p38.ObjectAdded:Wait()
-	end
-	return v39
+
+SkinBox:AddToggle("SkinChangerToggle", {
+    Text    = "Enable Skin Changer",
+    Default = false,
+})
+Toggles.SkinChangerToggle:OnChanged(function()
+    State.SkinChangerEnabled = Toggles.SkinChangerToggle.Value
+end)
+
+SkinBox:AddDropdown("SkinWrapDD", {
+    Text   = "Select Skin/Wrap",
+    Values = skinNames,
+    Default = 1,
+    Multi  = false,
+})
+Options.SkinWrapDD:OnChanged(function()
+    local idx = table.find(skinNames, Options.SkinWrapDD.Value)
+    State.SelectedSkinWrap = idx and skinMap[idx] or nil
+end)
+
+SkinBox:AddButton({
+    Text = "Apply Skin",
+    Func = function()
+        if not State.SkinChangerEnabled then return end
+        if not R_EquipCosmetic then return end
+        local skin = State.SelectedSkinWrap
+        if skin then
+            R_EquipCosmetic:FireServer(skin)
+        end
+    end,
+    Tooltip = "Apply selected wrap/skin to your current weapon",
+})
+
+-- Charm section
+local charmNames = {"None"}
+local charmMap   = {[1] = nil}
+
+if CosmeticLib and CosmeticLib.Cosmetics then
+    for id, data in pairs(CosmeticLib.Cosmetics) do
+        if data.Type == "Charm" or (type(id) == "string" and id:lower():find("charm")) then
+            table.insert(charmNames, tostring(id))
+            charmMap[#charmNames] = id
+        end
+    end
 end
-function v_u_10.WaitForLocalFighter(p40) -- name: WaitForLocalFighter
-	-- upvalues: (copy) v_u_3
-	return p40:WaitForFighter(v_u_3.LocalPlayer)
+
+CharmBox:AddDropdown("CharmDD", {
+    Text   = "Select Charm",
+    Values = charmNames,
+    Default = 1,
+    Multi  = false,
+})
+Options.CharmDD:OnChanged(function()
+    local idx = table.find(charmNames, Options.CharmDD.Value)
+    State.SelectedCharm = idx and charmMap[idx] or nil
+end)
+
+CharmBox:AddButton({
+    Text = "Apply Charm",
+    Func = function()
+        if not R_EquipCosmetic then return end
+        local charm = State.SelectedCharm
+        if charm then
+            R_EquipCosmetic:FireServer(charm)
+        end
+    end,
+    Tooltip = "Apply selected charm",
+})
+
+-- Skin icon viewport label
+CharmBox:AddLabel("Selected skin preview: click Apply Skin")
+
+-- ============================================================
+-- UI SETTINGS TAB
+-- ============================================================
+local MenuGroup = Tabs.Settings:AddLeftGroupbox("Menu")
+MenuGroup:AddButton("Unload", function() Library:Unload() end)
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "End", NoUI = true, Text = "Menu keybind" })
+Library.ToggleKeybind = Options.MenuKeybind
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({"MenuKeybind"})
+ThemeManager:SetFolder("RivalsSuite")
+SaveManager:SetFolder("RivalsSuite/config")
+SaveManager:BuildConfigSection(Tabs.Settings)
+ThemeManager:ApplyToTab(Tabs.Settings)
+
+-- ============================================================
+-- AIMBOT LOGIC â€” RenderStepped
+-- ============================================================
+local lastAimbotFire = 0
+local lastTriggerFire = 0
+local lastRagebotFire = 0
+local ragebotDesyncActive = false
+local originalRootPos = nil
+
+RunService.RenderStepped:Connect(function(dt)
+    local mousePos = UserInputService:GetMouseLocation()
+
+    -- FOV Circle
+    if State.AimbotVisFOVCirc then
+        FOVCircle.Visible = true
+        FOVCircle.Position = mousePos
+        FOVCircle.Radius   = State.AimbotFOV
+    else
+        FOVCircle.Visible = false
+    end
+
+    local localChar = LocalPlayer.Character
+    local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+    -- AIMBOT
+    if State.AimbotEnabled then
+        local target = getClosestPlayerToMouse(State.AimbotFOV)
+        if target then
+            local bone = getBodyPart(target, State.AimbotBone)
+            if bone then
+                local targetPos = State.AimbotPrediction
+                    and predictPosition(bone.Parent:FindFirstChild("HumanoidRootPart")) or bone.Position
+                local screenPos, onScreen = Camera:WorldToViewportPoint(targetPos)
+                if onScreen then
+                    local aimPos = Vector2.new(screenPos.X, screenPos.Y)
+                    local currentMouse = mousePos
+                    local delta = aimPos - currentMouse
+                    -- smooth lerp via mousedelta simulation
+                    -- We use UpdateCameraRotation remote for legit-looking aim
+                    local camCF = Camera.CFrame
+                    local targetCF = CFrame.new(camCF.Position, targetPos)
+                    local newCF = camCF:Lerp(targetCF, math.clamp(State.AimbotSmooth, 0.01, 1))
+                    Camera.CFrame = newCF
+                end
+            end
+        end
+    end
+
+    -- ANTI-AIM (spoof camera rotation sent to server via UpdateCameraRotations)
+    if State.AntiAimEnabled and R_UpdateCameraRotations and localRoot then
+        State.AntiAimTick = State.AntiAimTick + dt
+        local yaw = 0
+        local mode = State.AntiAimMode
+        if mode == "Spin" then
+            yaw = (State.AntiAimTick * 720) % 360
+        elseif mode == "Jitter" then
+            yaw = (math.random() > 0.5 and 1 or -1) * 90
+        elseif mode == "Static180" then
+            yaw = 180
+        elseif mode == "Backward" then
+            yaw = 180
+        end
+        local spoofedCF = CFrame.new(localRoot.Position)
+            * CFrame.Angles(0, math.rad(yaw + localRoot.Orientation.Y), 0)
+        -- Fire the anti-aim rotation to server
+        pcall(function()
+            R_UpdateCameraRotations:FireServer(spoofedCF)
+        end)
+    end
+
+    -- TRIGGERBOT â€” fires UseItem when crosshair is on target (always mode)
+    if State.TriggerbotEnabled then
+        local now = tick()
+        if now - lastTriggerFire >= State.TriggerbotDelay then
+            local unitRay = Camera:ScreenPointToRay(mousePos.X, mousePos.Y)
+            local rayParams = RaycastParams.new()
+            rayParams.FilterDescendantsInstances = {LocalPlayer.Character or workspace}
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, rayParams)
+            if result and result.Instance then
+                local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
+                local hitPlayer = hitModel and Players:GetPlayerFromCharacter(hitModel)
+                if hitPlayer and hitPlayer ~= LocalPlayer then
+                    -- Fire UseItem to simulate shooting
+                    if R_UseItem then
+                        pcall(function()
+                            R_UseItem:InvokeServer()
+                        end)
+                    end
+                    lastTriggerFire = now
+                end
+            end
+        end
+    end
+
+    -- UTILITY ESP â€” scan workspace for thrown utilities
+    if State.UtilityESPEnabled then
+        -- clean dead ESP labels
+        for i = #State.UtilityESPObjects, 1, -1 do
+            local obj = State.UtilityESPObjects[i]
+            if not obj.part or not obj.part.Parent then
+                pcall(function() obj.label:Remove() end)
+                pcall(function() obj.dist:Remove() end)
+                table.remove(State.UtilityESPObjects, i)
+            end
+        end
+        -- scan for new utility parts (tagged or named)
+        local utilityKeywords = {"grenade", "flashbang", "smoke", "molotov", "throwable", "utility", "mine", "satchel", "snowball"}
+        for _, part in pairs(workspace:GetDescendants()) do
+            if part:IsA("BasePart") or part:IsA("Model") then
+                local nm = part.Name:lower()
+                local isUtil = false
+                for _, kw in ipairs(utilityKeywords) do
+                    if nm:find(kw) then isUtil = true break end
+                end
+                if isUtil then
+                    -- check not already tracked
+                    local alreadyTracked = false
+                    for _, existing in pairs(State.UtilityESPObjects) do
+                        if existing.part == part then alreadyTracked = true break end
+                    end
+                    if not alreadyTracked then
+                        local labelDraw = Drawing.new("Text")
+                        labelDraw.Size    = 14
+                        labelDraw.Color   = Color3.fromRGB(255,200,0)
+                        labelDraw.Outline = true
+                        labelDraw.Text    = "[" .. part.Name .. "]"
+                        local distDraw = Drawing.new("Text")
+                        distDraw.Size    = 12
+                        distDraw.Color   = Color3.fromRGB(200,200,200)
+                        distDraw.Outline = true
+                        table.insert(State.UtilityESPObjects, {part=part, label=labelDraw, dist=distDraw})
+                    end
+                end
+            end
+        end
+        -- update positions
+        if localRoot then
+            for _, obj in pairs(State.UtilityESPObjects) do
+                local pos3d
+                if obj.part:IsA("BasePart") then
+                    pos3d = obj.part.Position
+                elseif obj.part:IsA("Model") and obj.part.PrimaryPart then
+                    pos3d = obj.part.PrimaryPart.Position
+                end
+                if pos3d then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(pos3d)
+                    obj.label.Visible = onScreen
+                    obj.dist.Visible  = onScreen
+                    if onScreen then
+                        obj.label.Position = Vector2.new(screenPos.X, screenPos.Y - 20)
+                        local d = math.floor((pos3d - localRoot.Position).Magnitude)
+                        obj.dist.Text     = d .. "m"
+                        obj.dist.Position = Vector2.new(screenPos.X, screenPos.Y - 6)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ============================================================
+-- SILENT AIM â€” hook via RemoteEvent
+-- ============================================================
+local originalFireServer
+local function setupSilentAim()
+    -- We hook Replicate (position+aim replication) to redirect aim
+    -- This intercepts the fire position so server thinks you hit an enemy
+    local mt = getrawmetatable(game)
+    local oldNamecall
+    local wasReadonly = isreadonly(mt)
+    if wasReadonly then setreadonly(mt, false) end
+    oldNamecall = mt.__namecall
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            local args = {...}
+            -- Check if this is UseItem remote
+            if self == R_UseItem and State.SilentAimEnabled then
+                local target = getClosestPlayerToMouse(State.AimbotFOV)
+                if target then
+                    local bone = getBodyPart(target, State.SilentBone)
+                    if bone then
+                        local targetPos = State.AimbotPrediction
+                            and predictPosition(bone.Parent:FindFirstChild("HumanoidRootPart")) or bone.Position
+                        -- inject target position into args if table
+                        if type(args[1]) == "table" then
+                            args[1].Position = targetPos
+                        elseif type(args[1]) == "userdata" then
+                            -- replace CFrame arg
+                            for i, v in pairs(args) do
+                                if type(v) == "vector" or (type(v) == "userdata" and tostring(v):find("Vector3")) then
+                                    args[i] = targetPos
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            return oldNamecall(self, table.unpack(args))
+        end
+        return oldNamecall(self, ...)
+    end)
+    if wasReadonly then setreadonly(mt, true) end
 end
-function v_u_10.GenerateCharacterModel(p_u_41, p_u_42, p43) -- name: GenerateCharacterModel
-	-- upvalues: (copy) v_u_3, (copy) v_u_9
-	if p_u_41._character_model_cache[tostring(p_u_42)] then
-		return p_u_41._character_model_cache[tostring(p_u_42)]
-	end
-	local function v50() -- name: generate
-		-- upvalues: (ref) v_u_3, (copy) p_u_42, (copy) p_u_41
-		local v44, v45 = pcall(v_u_3.GetHumanoidDescriptionFromUserIdAsync, v_u_3, p_u_42)
-		if v44 then
-			v45.Torso = 15365012259
-			v45.LeftArm = 15365010034
-			v45.RightArm = 15365012263
-			v45.LeftLeg = 15365010038
-			v45.RightLeg = 15365010030
-			local v46, v47 = pcall(v_u_3.CreateHumanoidModelFromDescriptionAsync, v_u_3, v45, Enum.HumanoidRigType.R15)
-			if v46 then
-				p_u_41._preloaded_character_model = v47
-				local v48 = {
-					["Template"] = v47
-				}
-				local v49 = p_u_42
-				p_u_41._character_model_cache[tostring(v49)] = v48
-				return v48
-			end
-			warn("Failed to create humanoid model:", v47)
-		else
-			warn("Failed to fetch humanoid description:", v45)
-		end
-	end
-	if p43 then
-		return v50()
-	end
-	task.spawn(v50)
-	return p_u_41._character_model_cache[tostring(p_u_42)] or {
-		["Template"] = v_u_9
-	}
+
+pcall(setupSilentAim)
+
+-- ============================================================
+-- BULLET TRACER HELPERS
+-- ============================================================
+local function createLinearTracer(fromPos, toPos, color, fadeTime)
+    local line = Drawing.new("Line")
+    line.From      = fromPos
+    line.To        = toPos
+    line.Color     = color
+    line.Thickness = 1.5
+    line.Visible   = true
+    task.delay(fadeTime, function()
+        for i = 1, 10 do
+            line.Transparency = i / 10
+            task.wait(fadeTime / 10)
+        end
+        line:Remove()
+    end)
 end
-function v_u_10._VerifyEntityLoop(p_u_51) -- name: _VerifyEntityLoop
-	-- upvalues: (copy) v_u_3, (copy) v_u_1
-	local function v53() -- name: is_inaccurate
-		-- upvalues: (copy) p_u_51, (ref) v_u_3
-		local v52 = not (p_u_51.LocalFighter:Get("IsInDuel") or p_u_51.LocalFighter:Get("IsInShootingRange"))
-		if v52 then
-			v52 = not (v_u_3.LocalPlayer.Character and p_u_51.LocalFighter.Entity) or p_u_51.LocalFighter.Entity.Model ~= v_u_3.LocalPlayer.Character
-		end
-		return v52
-	end
-	while wait(1) do
-		if v53() then
-			wait(2)
-			if v53() then
-				v_u_1.Remotes.Replication.Fighter.VerifyClientEntity:FireServer()
-				wait(10)
-			end
-		end
-	end
+
+local function createLightningTracer(fromPos, toPos, color, fadeTime)
+    -- Segmented jagged line to simulate lightning
+    local segments = 8
+    local prev = fromPos
+    local lines = {}
+    for i = 1, segments do
+        local t = i / segments
+        local basePos = fromPos:Lerp(toPos, t)
+        local jitter = Vector2.new(math.random(-15,15), math.random(-15,15))
+        local seg = Drawing.new("Line")
+        seg.From      = prev
+        seg.To        = basePos + jitter
+        seg.Color     = color
+        seg.Thickness = 1
+        seg.Visible   = true
+        table.insert(lines, seg)
+        prev = seg.To
+    end
+    task.delay(fadeTime, function()
+        for _, l in pairs(lines) do
+            pcall(function() l:Remove() end)
+        end
+    end)
 end
-function v_u_10._ConnectionLevelReplicationLoop(p54) -- name: _ConnectionLevelReplicationLoop
-	-- upvalues: (copy) v_u_5, (copy) v_u_1
-	while true do
-		repeat
-			wait(1)
-		until p54.LocalFighter and p54.LocalFighter:Get("IsInDuel")
-		local v55 = v_u_5:GetConnectionLevel((v_u_5:GetLocalConnectionPing()))
-		if v55 ~= p54._last_connection_level then
-			p54._last_connection_level = v55
-			v_u_1.Remotes.Replication.Fighter.UpdateConnectionLevel:FireServer(v55)
-		end
-	end
+
+local function createDragonTracer(fromPos, toPos, color, fadeTime)
+    -- Wavy sinusoidal tracer styled like a dragon
+    local segments = 12
+    local prev = fromPos
+    local lines = {}
+    for i = 1, segments do
+        local t = i / segments
+        local basePos = fromPos:Lerp(toPos, t)
+        local wave = math.sin(t * math.pi * 4) * 20
+        local seg = Drawing.new("Line")
+        seg.From      = prev
+        seg.To        = basePos + Vector2.new(wave, wave * 0.5)
+        seg.Color     = Color3.fromRGB(255, math.floor(50 + t*150), 0)
+        seg.Thickness = 2
+        seg.Visible   = true
+        table.insert(lines, seg)
+        prev = seg.To
+    end
+    task.delay(fadeTime, function()
+        for _, l in pairs(lines) do
+            pcall(function() l:Remove() end)
+        end
+    end)
 end
-function v_u_10._UpdateNetworkIDMap(p56) -- name: _UpdateNetworkIDMap
-	p56._network_id_map = {}
-	for _, v57 in pairs(p56.Objects) do
-		local v58 = v57:Get("DecodedNetworkID")
-		if v58 then
-			p56._network_id_map[v58] = v57
-		end
-	end
+
+local function createSonicTracer(fromPos, toPos, color, fadeTime)
+    -- Fast straight with a cyan glow ring
+    local line = Drawing.new("Line")
+    line.From      = fromPos
+    line.To        = toPos
+    line.Color     = Color3.fromRGB(30, 200, 255)
+    line.Thickness = 2.5
+    line.Visible   = true
+    local ring = Drawing.new("Circle")
+    ring.Position  = fromPos
+    ring.Radius    = 8
+    ring.Filled    = false
+    ring.Color     = Color3.fromRGB(30, 200, 255)
+    ring.Thickness = 1.5
+    ring.Visible   = true
+    task.delay(fadeTime, function()
+        pcall(function() line:Remove() end)
+        pcall(function() ring:Remove() end)
+    end)
 end
-function v_u_10._FighterAdded(p_u_59, p_u_60) -- name: _FighterAdded
-	p_u_60:GetDataChangedSignal("DecodedNetworkID"):Connect(function()
-		-- upvalues: (copy) p_u_59
-		p_u_59:_UpdateNetworkIDMap()
-	end)
-	p_u_60.EntityAdded:Connect(function(p61)
-		-- upvalues: (copy) p_u_59, (copy) p_u_60
-		p_u_59._model_to_fighter[p61.Model] = p_u_60
-	end)
-	p_u_60.EntityRemoved:Connect(function(_)
-		-- upvalues: (copy) p_u_59, (copy) p_u_60
-		for v62, v63 in pairs(p_u_59._model_to_fighter) do
-			if v63 == p_u_60 then
-				p_u_59._model_to_fighter[v62] = nil
-			end
-		end
-	end)
-	if p_u_60.Entity and p_u_60.Entity.Model then
-		p_u_59._model_to_fighter[p_u_60.Entity.Model] = p_u_60
-	end
-	p_u_59._player_to_fighter[p_u_60.Player] = p_u_60
-	p_u_59:_UpdateNetworkIDMap()
+
+local function createMinecraftTracer(fromPos, toPos, color, fadeTime)
+    -- Blocky squared segments
+    local segments = 6
+    local prev = fromPos
+    local lines = {}
+    for i = 1, segments do
+        local t = i / segments
+        local basePos = fromPos:Lerp(toPos, t)
+        local snap = Vector2.new(math.floor(basePos.X/8)*8, math.floor(basePos.Y/8)*8)
+        local seg = Drawing.new("Line")
+        seg.From      = prev
+        seg.To        = snap
+        seg.Color     = Color3.fromRGB(100, 255, 100)
+        seg.Thickness = 3
+        seg.Visible   = true
+        table.insert(lines, seg)
+        prev = seg.To
+    end
+    task.delay(fadeTime, function()
+        for _, l in pairs(lines) do
+            pcall(function() l:Remove() end)
+        end
+    end)
 end
-function v_u_10._ReplicateControls(p64) -- name: _ReplicateControls
-	-- upvalues: (copy) v_u_6, (copy) v_u_1
-	if p64.LocalFighter then
-		local v65 = 0.2 - (tick() - p64._last_controls_replicated_time)
-		local v66 = math.max(v65, 0.2)
-		task.delay(v66, function()
-			-- upvalues: (ref) v_u_6, (ref) v_u_1
-			local v67 = v_u_6.CurrentControls
-			if typeof(v67) == "string" then
-				v_u_1.Remotes.Replication.Fighter.SetControls:FireServer(v_u_6.CurrentControls)
-			end
-		end)
-	end
+
+local function spawnTracer(fromWorldPos, toWorldPos)
+    if not State.TracerEnabled then return end
+    local fromScreen, fs = Camera:WorldToViewportPoint(fromWorldPos)
+    local toScreen, ts   = Camera:WorldToViewportPoint(toWorldPos)
+    if not fs or not ts then return end
+    local f2 = Vector2.new(fromScreen.X, fromScreen.Y)
+    local t2 = Vector2.new(toScreen.X, toScreen.Y)
+    local style = State.TracerStyle
+    local color = State.TracerColor
+    local fade  = State.TracerFadeTime
+    if style == "Line"       then createLinearTracer(f2, t2, color, fade)
+    elseif style == "Lightning" then createLightningTracer(f2, t2, color, fade)
+    elseif style == "Dragon"    then createDragonTracer(f2, t2, color, fade)
+    elseif style == "Sonic"     then createSonicTracer(f2, t2, color, fade)
+    elseif style == "Minecraft" then createMinecraftTracer(f2, t2, color, fade)
+    end
 end
-function v_u_10._CameraReplicationLoop(p68) -- name: _CameraReplicationLoop
-	-- upvalues: (copy) v_u_1, (copy) v_u_7, (copy) v_u_5
-	local function v70(p69) -- name: send
-		-- upvalues: (ref) v_u_1
-		if not p69 or utf8.len(p69) then
-			v_u_1.Remotes.Replication.Fighter.UpdateCameraRotation:FireServer(p69, nil)
-		end
-	end
-	local v71 = false
-	local v72 = nil
-	while true do
-		while true do
-			wait(0.1)
-			if p68.LocalFighter and (p68.LocalFighter:Get("IsSpectating") and v_u_7:GetPublicState()) then
-				break
-			end
-			if not v71 then
-				task.defer(v70, v_u_5:EncodeCameraRotation(Vector2.zero))
-				v71 = true
-			end
-		end
-		local v73 = v_u_5:EncodeCameraRotation(v_u_7.Rotation)
-		if v71 or v73 ~= v72 then
-			task.defer(v70, v73)
-			v72 = v73
-			v71 = false
-		else
-			v72 = v73
-			v71 = false
-		end
-	end
-end
-function v_u_10._HookLocalFighter(p_u_74) -- name: _HookLocalFighter
-	-- upvalues: (copy) v_u_7, (copy) v_u_1, (copy) v_u_2
-	p_u_74.LocalFighter = p_u_74:WaitForLocalFighter()
-	local function v75() -- name: update_third_person_overide
-		-- upvalues: (ref) v_u_7, (copy) p_u_74
-		v_u_7:SetThirdPersonOverride(p_u_74.LocalFighter:Get("ThirdPersonOverride"))
-	end
-	p_u_74.LocalFighter:GetDataChangedSignal("ThirdPersonOverride"):Connect(v75)
-	task.defer(v75)
-	local v_u_76 = 0
-	local v_u_77 = Instance.new("BindableEvent")
-	v_u_77.Event:Connect(function()
-		-- upvalues: (ref) v_u_1
-		v_u_1.Remotes.Replication.Fighter.ResetCharacter:FireServer()
-	end)
-	local function v86() -- name: update_reset_button
-		-- upvalues: (ref) v_u_76, (ref) v_u_2, (copy) p_u_74, (copy) v_u_77
-		v_u_76 = v_u_76 + 1
-		local v78 = v_u_76
-		while v_u_76 == v78 do
-			local v79 = pcall
-			local v80 = v_u_2.SetCore
-			local v81 = v_u_2
-			local v82 = "ResetButtonCallback"
-			local v83 = not p_u_74.LocalFighter:Get("IsInDuel")
-			if v83 then
-				v83 = v_u_77
-			end
-			local v84, v85 = v79(v80, v81, v82, v83)
-			if v84 then
-				break
-			end
-			warn("Failed to set reset button callback", v85)
-			wait(0.1)
-		end
-	end
-	p_u_74.LocalFighter:GetDataChangedSignal("IsInDuel"):Connect(v86)
-	task.defer(v86)
-	p_u_74:_ReplicateControls()
-	task.defer(p_u_74._CameraReplicationLoop, p_u_74)
-	task.defer(p_u_74._ConnectionLevelReplicationLoop, p_u_74)
-	task.defer(p_u_74._VerifyEntityLoop, p_u_74)
-end
-function v_u_10._Setup(p87) -- name: _Setup
-	-- upvalues: (copy) v_u_4, (copy) v_u_3
-	function p87._reject_object_added_serial_callback(p88)
-		-- upvalues: (ref) v_u_4, (ref) v_u_3
-		local v89 = not p88[v_u_4:ToEnum("Player")]
-		if v89 then
-			v89 = not v_u_3:GetPlayerByUserId(p88[v_u_4:ToEnum("UserID")])
-		end
-		return v89
-	end
-end
-function v_u_10._Init(p_u_90) -- name: _Init
-	-- upvalues: (copy) v_u_6, (copy) v_u_1, (copy) v_u_5
-	p_u_90.ObjectAdded:Connect(function(p91)
-		-- upvalues: (copy) p_u_90
-		p_u_90:_FighterAdded(p91)
-	end)
-	p_u_90.ObjectRemoved:Connect(function(p92)
-		-- upvalues: (copy) p_u_90
-		for v93, v94 in pairs(p_u_90._player_to_fighter) do
-			if v94 == p92 then
-				p_u_90._model_to_fighter[v93] = nil
-			end
-		end
-		for v95, v96 in pairs(p_u_90._model_to_fighter) do
-			if v96 == p92 then
-				p_u_90._model_to_fighter[v95] = nil
-			end
-		end
-	end)
-	v_u_6.ControlsChanged:Connect(function()
-		-- upvalues: (copy) p_u_90
-		p_u_90:_ReplicateControls()
-	end)
-	v_u_1.Remotes.Replication.Fighter.UpdateCameraRotations.OnClientEvent:Connect(function(p97)
-		-- upvalues: (ref) v_u_5, (copy) p_u_90
-		local v98 = v_u_5:DecodeCameraRotationBulk(p97)
-		for _, v99 in pairs(v98) do
-			local v100, v101, v102 = table.unpack(v99)
-			local v103 = p_u_90:GetFighterFromNetworkID(v100)
-			if v103 then
-				v103:SetReplicate("CameraRotation", v_u_5:FromXYToCameraRotation(v101, v102))
-			end
-		end
-	end)
-	for _, v104 in pairs(p_u_90.Objects) do
-		task.spawn(p_u_90._FighterAdded, p_u_90, v104)
-	end
-	p_u_90:_Setup()
-	task.defer(p_u_90._HookLocalFighter, p_u_90)
-end
-return v_u_10._new()
+
+-- ============================================================
+-- RAGEBOT + DESYNC LOGIC â€” Heartbeat
+-- ============================================================
+local ragebotCooldown = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    local localChar = LocalPlayer.Character
+    local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+    if not State.RagebotEnabled or not localRoot then return end
+    local now = tick()
+    if now - ragebotCooldown < 0.12 then return end
+    ragebotCooldown = now
+
+    local enemies = getEnemies()
+    if #enemies == 0 then return end
+
+    local target = nil
+    local mode = State.RagebotMode
+
+    if mode == "Closest" then
+        target = getClosestPlayerWorldspace()
+    elseif mode == "LowestHP" then
+        local lowestHP = math.huge
+        for _, p in ipairs(enemies) do
+            local char = p.Character
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health < lowestHP then
+                lowestHP = hum.Health
+                target = p
+            end
+        end
+    elseif mode == "Sequential" then
+        target = enemies[(math.floor(now * 10) % #enemies) + 1]
+    end
+
+    if not target or not target.Character then return end
+    local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local predictedPos = predictPosition(targetRoot)
+
+    -- Teleport Desync: move client to target position while firing
+    if State.RagebotDesync and not ragebotDesyncActive then
+        ragebotDesyncActive = true
+        originalRootPos = localRoot.CFrame
+        -- Instant aim: fire StartAiming
+        if Toggles.RagebotInstantAim.Value and R_UpdateCameraRotations then
+            local aimCF = CFrame.new(predictedPos, predictedPos + Vector3.new(0,0,1))
+            pcall(function() R_UpdateCameraRotations:FireServer(aimCF) end)
+        end
+        -- Client-side teleport
+        localRoot.CFrame = CFrame.new(predictedPos + Vector3.new(0, 0, -2))
+        -- Fire UseItem (StartShooting equivalent through remote)
+        if R_UseItem then
+            pcall(function() R_UseItem:InvokeServer() end)
+        end
+        -- Tracer
+        if originalRootPos then
+            spawnTracer(originalRootPos.Position, predictedPos)
+        end
+        -- Return after shot
+        task.delay(0.06, function()
+            if localRoot and originalRootPos then
+                localRoot.CFrame = originalRootPos
+            end
+            ragebotDesyncActive = false
+        end)
+    elseif not State.RagebotDesync then
+        -- No desync: just fire
+        if R_UseItem then
+            pcall(function() R_UseItem:InvokeServer() end)
+        end
+        spawnTracer(localRoot.Position, predictedPos)
+    end
+end)
+
+-- ============================================================
+-- LIBRARY UNLOAD CLEANUP
+-- ============================================================
+Library:OnUnload(function()
+    FOVCircle:Remove()
+    for _, obj in pairs(State.UtilityESPObjects) do
+        pcall(function() obj.label:Remove() end)
+        pcall(function() obj.dist:Remove() end)
+    end
+    State.UtilityESPObjects = {}
+    print("[RivalsSuite] Unloaded.")
+end)
+
+SaveManager:LoadAutoloadConfig()
+print("[RivalsSuite] Loaded. Built by Axiom.")
