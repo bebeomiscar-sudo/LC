@@ -1,1103 +1,1273 @@
--- ============================================================
--- RIVALS CHEAT SUITE v3 — Built by Axiom
--- AC Bypass | Aimbot (Luau.txt engine) | Silent Aim (fixed)
--- Triggerbot (mUtil fixed) | Ragebot (Oynx engine)
--- Riot Shield Godmode | Bullet Tracers (fixed) | Anti-Aim
--- Skin Changer | Utility ESP | Mobile Center FOV
--- ============================================================
+-- ================================================
+-- SEXHOOK | RIVALS COMBAT SCRIPT
+-- voidspam | desync | dodge | standoff desync
+-- baiting system | riot shield gm | underground anti aim
+-- ================================================
 
--- AC Bypass (MiscellaneousController weak table hook — from Luau.txt)
-local oldtable; oldtable = hookfunction(getrenv().setmetatable, newcclosure(function(Table, Metatable)
-    if Metatable and typeof(Metatable) == "table" and rawget(Metatable, "__mode") == "kv" then
-        local trace = debug.traceback()
-        if trace:find("MiscellaneousController") then
-            return oldtable({1, 2, 3}, {})
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+
+local lp     = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- ══════════════════════════════════════════════
+--              LINORIA LIB LOAD
+-- ══════════════════════════════════════════════
+local repo        = "https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/"
+local Library     = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+Library.ShowToggleFrameInKeybinds = true
+Library.ShowCustomCursor          = false
+Library.NotifySide                = "Left"
+
+local Window = Library:CreateWindow({
+    Title                = "sexhook",
+    Center               = true,
+    AutoShow             = true,
+    Resizable            = true,
+    ShowCustomCursor     = false,
+    UnlockMouseWhileOpen = true,
+    NotifySide           = "Left",
+    TabPadding           = 8,
+    MenuFadeTime         = 0.2,
+})
+
+-- ══════════════════════════════════════════════
+--                    TABS
+-- ══════════════════════════════════════════════
+local Tabs = {
+    combat     = Window:AddTab("combat"),
+    movement   = Window:AddTab("movement"),
+    bait       = Window:AddTab("bait"),
+    shield     = Window:AddTab("shield"),
+    settings   = Window:AddTab("settings"),
+}
+
+-- ══════════════════════════════════════════════
+--              GROUPBOXES
+-- ══════════════════════════════════════════════
+local GBox_VoidSpam    = Tabs.combat:AddLeftGroupbox("void spam")
+local GBox_Desync      = Tabs.combat:AddRightGroupbox("desync")
+local GBox_StandOff    = Tabs.combat:AddRightGroupbox("standoff desync")
+local GBox_Underground = Tabs.combat:AddLeftGroupbox("underground anti aim")
+
+local GBox_Dodge       = Tabs.movement:AddLeftGroupbox("dodge system")
+
+local GBox_Bait        = Tabs.bait:AddLeftGroupbox("bait system")
+local GBox_BaitOpts    = Tabs.bait:AddRightGroupbox("bait options")
+
+local GBox_Shield      = Tabs.shield:AddLeftGroupbox("riot shield gm")
+local GBox_ShieldOpts  = Tabs.shield:AddRightGroupbox("shield options")
+
+-- ══════════════════════════════════════════════
+--              UTILITY FUNCTIONS
+-- ══════════════════════════════════════════════
+local function getChar()
+    return lp.Character
+end
+
+local function getHRP()
+    local c = getChar()
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum()
+    local c = getChar()
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function notify(title, text, dur)
+    Library:Notify(("[sexhook] %s — %s"):format(title, text), dur or 3)
+end
+
+-- ══════════════════════════════════════════════
+--            BAITING SYSTEM
+-- ══════════════════════════════════════════════
+do
+    local bait = {
+        active        = false,
+        mode          = "freeze",
+        frozenCF      = nil,
+        customPos     = nil,
+        orbitCenter   = nil,
+        orbitRadius   = 10,
+        orbitSpeed    = 1.5,
+        orbitAngle    = 0,
+        timerEnabled  = false,
+        timerDur      = 5,
+        timerElapsed  = 0,
+        ghostFlash    = false,
+        flashDur      = 0.12,
+        flashCooldown = 3,
+        _flashTimer   = 0,
+        _inFlash      = false,
+        _flashElapsed = 0,
+        _mt           = getrawmetatable(game),
+        _oldNewindex  = nil,
+        _conn         = nil,
+    }
+
+    local function getBaitCF(dt)
+        if bait.mode == "freeze" then
+            return bait.frozenCF
+        elseif bait.mode == "custom" and bait.customPos then
+            return CFrame.new(bait.customPos)
+        elseif bait.mode == "orbit" and bait.orbitCenter then
+            bait.orbitAngle = bait.orbitAngle + bait.orbitSpeed * dt
+            local ox = bait.orbitCenter.X + math.cos(bait.orbitAngle) * bait.orbitRadius
+            local oz = bait.orbitCenter.Z + math.sin(bait.orbitAngle) * bait.orbitRadius
+            return CFrame.new(Vector3.new(ox, bait.orbitCenter.Y, oz))
+        end
+        return bait.frozenCF
+    end
+
+    local function installHook()
+        local hrp = getHRP()
+        if not hrp then return false end
+        bait._oldNewindex = bait._mt.__newindex
+        setreadonly(bait._mt, false)
+        bait._mt.__newindex = newcclosure(function(self, key, value)
+            if bait.active and self == hrp and key == "CFrame" then
+                if bait._inFlash then
+                    return bait._oldNewindex(self, key, value)
+                end
+                local fakeCF = getBaitCF(0)
+                if fakeCF then
+                    return bait._oldNewindex(self, key, fakeCF)
+                end
+            end
+            return bait._oldNewindex(self, key, value)
+        end)
+        setreadonly(bait._mt, true)
+        return true
+    end
+
+    local function removeHook()
+        if not bait._oldNewindex then return end
+        setreadonly(bait._mt, false)
+        bait._mt.__newindex = bait._oldNewindex
+        setreadonly(bait._mt, true)
+        bait._oldNewindex = nil
+    end
+
+    bait._conn = RunService.Heartbeat:Connect(function(dt)
+        if not bait.active then return end
+        if bait.timerEnabled then
+            bait.timerElapsed = bait.timerElapsed + dt
+            if bait.timerElapsed >= bait.timerDur then
+                bait.disable()
+                notify("bait", "timer expired — bait disabled")
+                return
+            end
+        end
+        if bait.ghostFlash then
+            bait._flashTimer = bait._flashTimer + dt
+            if bait._inFlash then
+                bait._flashElapsed = bait._flashElapsed + dt
+                if bait._flashElapsed >= bait.flashDur then
+                    bait._inFlash      = false
+                    bait._flashTimer   = 0
+                    bait._flashElapsed = 0
+                end
+            elseif bait._flashTimer >= bait.flashCooldown then
+                bait._inFlash      = true
+                bait._flashElapsed = 0
+            end
+        end
+        if bait.mode == "orbit" and bait.orbitCenter then
+            bait.orbitAngle = bait.orbitAngle + bait.orbitSpeed * dt
+        end
+    end)
+
+    function bait.enable(mode, pos)
+        local hrp = getHRP()
+        if not hrp then
+            notify("bait", "no hrp — spawn first")
+            return
+        end
+        bait.mode         = mode or "freeze"
+        bait.frozenCF     = hrp.CFrame
+        bait.timerElapsed = 0
+        bait._flashTimer  = 0
+        bait._inFlash     = false
+        if mode == "custom" and pos then
+            bait.customPos = typeof(pos) == "Vector3" and pos
+                or Vector3.new(pos[1], pos[2], pos[3])
+        elseif mode == "orbit" then
+            bait.orbitCenter = pos or hrp.Position
+            bait.orbitAngle  = 0
+        end
+        if not bait._oldNewindex then
+            if not installHook() then
+                notify("bait", "hook failed")
+                return
+            end
+        end
+        bait.active = true
+        notify("bait", "active — mode: " .. bait.mode)
+    end
+
+    function bait.disable()
+        bait.active   = false
+        bait._inFlash = false
+        removeHook()
+        notify("bait", "disabled")
+    end
+
+    function bait.setFreeze()
+        local hrp = getHRP()
+        if hrp then
+            bait.frozenCF = hrp.CFrame
+            notify("bait", "freeze point updated")
         end
     end
-    return oldtable(Table, Metatable)
-end))
 
--- SERVICES
-local cr  = cloneref or function(o) return o end
-local plr = cr(game:GetService("Players"))
-local rs  = cr(game:GetService("RunService"))
-local uis = cr(game:GetService("UserInputService"))
-local rep = cr(game:GetService("ReplicatedStorage"))
-local tws = cr(game:GetService("TweenService"))
-local ws  = cr(game:GetService("Workspace"))
-
-local lp  = plr.LocalPlayer
-local cam = ws.CurrentCamera
-local psc = lp.PlayerScripts
-local pg  = lp:WaitForChild("PlayerGui")
-
--- MOBILE DETECTION
-local isMobile = uis.TouchEnabled and not uis.KeyboardEnabled
-
--- SCREEN CENTER — mobile uses center, PC uses mouse
-local function scr()
-    if isMobile then
-        return Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    function bait.setTimer(seconds, enabled)
+        bait.timerDur     = seconds or 5
+        bait.timerEnabled = enabled ~= false
     end
-    return uis:GetMouseLocation()
-end
 
--- MODULE REFS
-local mUtil   = nil
-local mEnum   = nil
-local mCam    = nil
-local mFig    = nil
-local mData   = nil
-local mCosm   = nil
-local mItemLib = nil
-local rUseItem = nil
-
-local ctl = nil
-task.spawn(function()
-    pcall(function() ctl = psc:WaitForChild("Controllers", 30) end)
-end)
-
-pcall(function() mUtil    = require(rep.Modules.Utility) end)
-pcall(function() mEnum    = require(rep.Modules.EnumLibrary) end)
-pcall(function() mCosm    = require(rep.Modules:WaitForChild("CosmeticLibrary", 10)) end)
-pcall(function() mItemLib = require(rep.Modules:WaitForChild("ItemLibrary", 10)) end)
-
-local function tryCtl()
-    if not ctl then pcall(function() ctl = psc:FindFirstChild("Controllers") end) end
-    if ctl then
-        if not mCam  then pcall(function() mCam  = require(ctl:WaitForChild("CameraController",  5)) end) end
-        if not mFig  then pcall(function() mFig  = require(ctl:WaitForChild("FighterController",  5)) end) end
-        if not mData then pcall(function() mData = require(ctl:WaitForChild("PlayerDataController", 5)) end) end
+    function bait.setGhostFlash(enabled, flashDur, cooldown)
+        bait.ghostFlash    = enabled
+        bait.flashDur      = flashDur  or bait.flashDur
+        bait.flashCooldown = cooldown  or bait.flashCooldown
     end
-    if not rUseItem then
-        pcall(function() rUseItem = rep.Remotes.Replication.Fighter.UseItem end)
+
+    function bait.setOrbit(center, radius, speed)
+        bait.orbitCenter = center or bait.orbitCenter
+        bait.orbitRadius = radius or bait.orbitRadius
+        bait.orbitSpeed  = speed  or bait.orbitSpeed
     end
-end
-pcall(tryCtl)
-task.spawn(function()
-    while not (mCam and mFig) do task.wait(3); tryCtl() end
-end)
 
--- CHARACTER
-local ch  = lp.Character or lp.CharacterAdded:Wait()
-local hrp = ch:WaitForChild("HumanoidRootPart")
-local hum = ch:WaitForChild("Humanoid")
-lp.CharacterAdded:Connect(function(c)
-    ch  = c
-    hrp = c:WaitForChild("HumanoidRootPart")
-    hum = c:WaitForChild("Humanoid")
-end)
-
--- UI LIBRARY
-local LibraryUrl = "https://raw.githubusercontent.com/Vovabro46/trash/refs/heads/main/Test.lua"
-local Success, Library = pcall(function()
-    return loadstring(game:HttpGet(LibraryUrl))()
-end)
-if not Success or not Library then
-    return warn("[RivalsSuite] Failed to load UI library!")
+    getgenv().BaitSystem = bait
 end
 
--- ============================================================
--- UTILS
--- ============================================================
-local vpRp = RaycastParams.new()
-vpRp.FilterType = Enum.RaycastFilterType.Exclude
+-- ══════════════════════════════════════════════
+--          RIOT SHIELD GODMODE
+-- ══════════════════════════════════════════════
+do
+    local shieldGM = {
+        enabled      = false,
+        hooked       = false,
+        origRef      = nil,
+        tblRef       = nil,
+        impulseX     = 0,
+        impulseY     = -20,
+        impulseZ     = 0,
+        impulseScale = 1,
+    }
 
-local function sameTm(p)
-    local r = false
-    pcall(function()
-        local a = lp:GetAttribute("TeamID"); local b = p:GetAttribute("TeamID")
-        if a ~= nil and b ~= nil then r = (a == b) end
-    end)
-    return r
-end
+    local function buildImpulse()
+        return Vector3.new(shieldGM.impulseX, shieldGM.impulseY, shieldGM.impulseZ)
+    end
 
-local function isVis(orig, part)
-    if not part then return false end
-    local ok, res = pcall(function()
-        vpRp.FilterDescendantsInstances = {lp.Character, part.Parent}
-        local d = part.Position - orig
-        local h = ws:Raycast(orig, d, vpRp)
-        return h == nil or h.Instance:IsDescendantOf(part.Parent)
-    end)
-    return ok and res or false
-end
-
-local function inFov(part, fovSz)
-    if not part then return false end
-    local sp, on = cam:WorldToViewportPoint(part.Position)
-    if not on then return false end
-    return (Vector2.new(sp.X, sp.Y) - scr()).Magnitude <= fovSz
-end
-
-local function w2s(pos)
-    local sp, on = cam:WorldToViewportPoint(pos)
-    if not on or sp.Z <= 0 then return nil end
-    return Vector2.new(sp.X, sp.Y)
-end
-
-local function angDiff(f, t)
-    local d = t - f
-    return ((d + math.pi) % (math.pi * 2)) - math.pi
-end
-
-local PMAP = {
-    ["Head"]             = {"Head"},
-    ["HumanoidRootPart"] = {"HumanoidRootPart"},
-    ["UpperTorso"]       = {"UpperTorso","Torso","HumanoidRootPart"},
-    ["LowerTorso"]       = {"LowerTorso","Torso","HumanoidRootPart"},
-    ["Body"]             = {"UpperTorso","LowerTorso","Torso","HumanoidRootPart"},
-    ["Head, Body"]       = {"Head","UpperTorso","LowerTorso","Torso","HumanoidRootPart"},
-    ["Random"]           = {"Random"},
-}
-local function bPart(char, s)
-    local pr = PMAP[s] or {"Head"}
-    if pr[1] == "Random" then
-        local av = {}
-        for _, n in ipairs({"Head","UpperTorso","LowerTorso","HumanoidRootPart"}) do
-            local p = char:FindFirstChild(n); if p then table.insert(av, p) end
+    local function scanAndHook()
+        local gc = getgc(false)
+        if type(gc) ~= "table" then
+            warn("[shieldgm] getgc unavailable")
+            return
         end
-        return #av > 0 and av[math.random(1,#av)] or nil
-    end
-    for _, n in ipairs(pr) do
-        local p = char:FindFirstChild(n); if p then return p end
-    end
-end
-
--- ============================================================
--- VIS CONFIG (defined early so fireShot can ref it)
--- ============================================================
-local VIS = { esp=false, tracers=false, tracerThick=1.5, tracerDur=0.4, tracerColor=Color3.fromRGB(255,50,50) }
-
--- ============================================================
--- TRACERS (fixed: only spawns from fireShot/rgFire calls)
--- ============================================================
-local tracers = {}
-
-local function spawnTracer(o3, t3)
-    if not VIS.tracers then return end
-    local l = Drawing.new("Line")
-    l.Thickness = VIS.tracerThick; l.Color = VIS.tracerColor
-    l.Transparency = 0; l.Visible = false
-    table.insert(tracers, {line=l, born=tick(), o=o3, t=t3})
-end
-
-local function updateTracers()
-    local now = tick(); local alive = {}
-    for _, t in ipairs(tracers) do
-        local age = now - t.born; local life = math.max(VIS.tracerDur, 0.05)
-        if age >= life then pcall(function() t.line:Remove() end)
-        else
-            local a = 1-(age/life)
-            local fromS = w2s(t.o); local toS = w2s(t.t)
-            if fromS and toS then
-                t.line.From=fromS; t.line.To=toS
-                t.line.Transparency=1-a; t.line.Visible=true
-            else t.line.Visible=false end
-            table.insert(alive, t)
+        for _, v in next, gc do
+            if type(v) ~= "table" then continue end
+            local ok, rf = pcall(rawget, v, "ReplicateFromServer")
+            if not ok or type(rf) ~= "function" then continue end
+            local ok2, consts = pcall(debug.getconstants, rf)
+            if not ok2 or type(consts) ~= "table" then continue end
+            local hasAbsorb = false
+            for _, c in next, consts do
+                if c == "AbsorbedHit" then hasAbsorb = true break end
+            end
+            if hasAbsorb then
+                local _orig = rf
+                v.ReplicateFromServer = newcclosure(function(self, eventName, ...)
+                    if eventName == "AbsorbedHit" and shieldGM.enabled then
+                        pcall(function()
+                            if self and type(self.IsRendered) == "function" and self:IsRendered() then
+                                local vm = rawget(self, "ViewModel")
+                                if vm and type(vm.Impulse) == "function" then
+                                    vm:Impulse(buildImpulse(), shieldGM.impulseScale, nil, true)
+                                end
+                            end
+                        end)
+                        return
+                    end
+                    return _orig(self, eventName, ...)
+                end)
+                shieldGM.hooked  = true
+                shieldGM.origRef = _orig
+                shieldGM.tblRef  = v
+                notify("shield gm", "godmode active")
+                return
+            end
         end
+        warn("[shieldgm] hook failed — equip riot shield then rehook")
     end
-    tracers = alive
-end
 
--- ============================================================
--- FIRE SHOT HELPER (mUtil + mEnum encoding — the correct way)
--- ============================================================
-local function fireShot(item, hitPart, origin)
-    if not item or not hitPart then return end
-    if not mUtil or not mEnum or not rUseItem then return end
-    local oid = nil; pcall(function() oid = item:Get("ObjectID") end)
-    if not oid then return end
-    local org = origin or cam.CFrame.Position
-    local aimCF = CFrame.lookAt(org, hitPart.Position)
-    local sd = {}
-    pcall(function()
-        sd[utf8.char(1)] = {
-            [utf8.char(0)] = mUtil:EncodeCFrame(aimCF),
-            [utf8.char(1)] = mUtil:EncodeCFrame(hitPart.CFrame),
-            [utf8.char(2)] = hitPart,
-            [utf8.char(3)] = mUtil:EncodeCFrame(hitPart.CFrame:ToObjectSpace(CFrame.new(hitPart.Position))),
-        }
-    end)
-    spawnTracer(org, hitPart.Position)
-    pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("StartShooting"), sd, nil) end)
-    task.delay(0.07, function()
-        pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("StopShooting"), {}, nil) end)
-    end)
-end
-
--- ============================================================
--- AIMBOT CONFIG (from Luau.txt — full engine)
--- ============================================================
-local AB = {
-    on=false, part="Head", team=false, vis=false, fov=150, drawFov=true,
-    dynFov=false, lockMode="Soft", curvePct=10, speed=1.0, speedAttack=1.0,
-    speedScaleFov=50, maxLock=3.0, reactTime=100,
-}
-local EASY_PRESETS = {
-    Casual  = {speed=0.4,speedAttack=0.6,speedScaleFov=20,maxLock=5,reactTime=220},
-    Normal  = {speed=1.0,speedAttack=1.5,speedScaleFov=50,maxLock=3,reactTime=110},
-    Tryhard = {speed=2.5,speedAttack=4.0,speedScaleFov=80,maxLock=7,reactTime=40},
-}
-local function applyEasyPreset(name)
-    local p = EASY_PRESETS[name]; if not p then return end
-    AB.speed=p.speed; AB.speedAttack=p.speedAttack
-    AB.speedScaleFov=p.speedScaleFov; AB.maxLock=p.maxLock; AB.reactTime=p.reactTime
-end
-
-local abTgt=nil; local abLockT=0; local abReactT=0; local abDoReact=false
-local abPrevPos=nil; local abPrevTick=0; local abCurveProgress=0
-local abCurveStart=nil; local abCurveEnd=nil
-
-local abCirc = Drawing.new("Circle")
-abCirc.NumSides=64; abCirc.Filled=false; abCirc.Color=Color3.fromRGB(255,255,255)
-abCirc.Thickness=1.5; abCirc.Transparency=0.7; abCirc.Visible=false
-
-local saCirc = Drawing.new("Circle")
-saCirc.NumSides=64; saCirc.Filled=false; saCirc.Color=Color3.fromRGB(100,255,100)
-saCirc.Thickness=1.5; saCirc.Transparency=0.7; saCirc.Visible=false
-
-local rgCirc = Drawing.new("Circle")
-rgCirc.NumSides=64; rgCirc.Filled=false; rgCirc.Color=Color3.fromRGB(255,80,80)
-rgCirc.Thickness=1.5; rgCirc.Transparency=0.7; rgCirc.Visible=false
-
-local function abEffFov()
-    local f = AB.fov
-    if AB.dynFov then f = f * (cam.FieldOfView/70) end
-    return f
-end
-
-local function abTgtValid(pt)
-    if not pt or not pt.Parent then return false end
-    local h = pt.Parent:FindFirstChildOfClass("Humanoid")
-    if not h or h.Health <= 0 then return false end
-    if not inFov(pt, abEffFov()) then return false end
-    if AB.vis and not isVis(cam.CFrame.Position, pt) then return false end
-    if AB.team then
-        local p = plr:GetPlayerFromCharacter(pt.Parent)
-        if p and sameTm(p) then return false end
+    function shieldGM.enable()
+        shieldGM.enabled = true
+        if not shieldGM.hooked then task.defer(scanAndHook) end
+        notify("shield gm", "enabled")
     end
+
+    function shieldGM.disable()
+        shieldGM.enabled = false
+        notify("shield gm", "disabled")
+    end
+
+    function shieldGM.rehook()
+        shieldGM.hooked  = false
+        shieldGM.origRef = nil
+        shieldGM.tblRef  = nil
+        task.defer(scanAndHook)
+        notify("shield gm", "rehooking...")
+    end
+
+    function shieldGM.setImpulse(x, y, z, scale)
+        shieldGM.impulseX     = x     or shieldGM.impulseX
+        shieldGM.impulseY     = y     or shieldGM.impulseY
+        shieldGM.impulseZ     = z     or shieldGM.impulseZ
+        shieldGM.impulseScale = scale or shieldGM.impulseScale
+    end
+
+    getgenv().ShieldGM = shieldGM
+end
+
+-- ══════════════════════════════════════════════
+--            VOID SPAM SYSTEM
+-- xyz configurable — rapid void desync
+-- ══════════════════════════════════════════════
+local VoidSpam = {
+    active   = false,
+    offsetX  = 0,
+    offsetY  = -500,
+    offsetZ  = 0,
+    speed    = 0.05,
+    _timer   = 0,
+    _origCF  = nil,
+}
+
+RunService.Heartbeat:Connect(function(dt)
+    if not VoidSpam.active then return end
+    local hrp = getHRP()
+    if not hrp then return end
+
+    VoidSpam._timer = VoidSpam._timer + dt
+    if VoidSpam._timer >= VoidSpam.speed then
+        VoidSpam._timer = 0
+        VoidSpam._origCF = hrp.CFrame
+
+        -- build the void target using configured xyz offsets
+        local voidCF = CFrame.new(
+            hrp.Position.X + VoidSpam.offsetX,
+            hrp.Position.Y + VoidSpam.offsetY,
+            hrp.Position.Z + VoidSpam.offsetZ
+        )
+
+        hrp.CFrame = voidCF
+
+        -- snap back locally next frame
+        task.defer(function()
+            if hrp and hrp.Parent and VoidSpam._origCF then
+                hrp.CFrame = VoidSpam._origCF
+            end
+        end)
+    end
+end)
+
+function VoidSpam.start()
+    VoidSpam.active = true
+    notify("void spam", "started")
+end
+
+function VoidSpam.stop()
+    VoidSpam.active = false
+    notify("void spam", "stopped")
+end
+
+-- ══════════════════════════════════════════════
+--               DESYNC SYSTEM
+-- ══════════════════════════════════════════════
+local Desync = {
+    active    = false,
+    intensity = 8,
+    speed     = 0.03,
+    _timer    = 0,
+    _phase    = 0,
+    _mt       = getrawmetatable(game),
+    _oldNI    = nil,
+    _hooked   = false,
+}
+
+local function installDesyncHook()
+    if Desync._hooked then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    Desync._oldNI = Desync._mt.__newindex
+    setreadonly(Desync._mt, false)
+    Desync._mt.__newindex = newcclosure(function(self, key, value)
+        if Desync.active and self == hrp and key == "CFrame" then
+            local ox = math.sin(Desync._phase * 3.7) * Desync.intensity
+            local oz = math.cos(Desync._phase * 2.3) * Desync.intensity
+            local fakeCF = CFrame.new(
+                value.X + ox,
+                value.Y,
+                value.Z + oz
+            ) * (value - value.Position)
+            return Desync._oldNI(self, key, fakeCF)
+        end
+        return Desync._oldNI(self, key, value)
+    end)
+    setreadonly(Desync._mt, true)
+    Desync._hooked = true
+end
+
+local function removeDesyncHook()
+    if not Desync._hooked or not Desync._oldNI then return end
+    setreadonly(Desync._mt, false)
+    Desync._mt.__newindex = Desync._oldNI
+    setreadonly(Desync._mt, true)
+    Desync._hooked = false
+    Desync._oldNI  = nil
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not Desync.active then return end
+    Desync._timer = Desync._timer + dt
+    if Desync._timer >= Desync.speed then
+        Desync._timer = 0
+        Desync._phase = Desync._phase + 1
+    end
+end)
+
+function Desync.enable()
+    installDesyncHook()
+    Desync.active = true
+    notify("desync", "active")
+end
+
+function Desync.disable()
+    Desync.active = false
+    removeDesyncHook()
+    notify("desync", "disabled")
+end
+
+-- ══════════════════════════════════════════════
+--            STANDOFF DESYNC SYSTEM
+-- ══════════════════════════════════════════════
+local StandoffDesync = {
+    active      = false,
+    ghostCount  = 3,
+    spread      = 6,
+    switchRate  = 0.04,
+    _ghosts     = {},
+    _idx        = 1,
+    _timer      = 0,
+    _realCF     = nil,
+    _mt         = getrawmetatable(game),
+    _oldNI      = nil,
+    _hooked     = false,
+}
+
+local function buildGhosts(hrp)
+    StandoffDesync._ghosts = {}
+    for i = 1, StandoffDesync.ghostCount do
+        local angle = (2 * math.pi / StandoffDesync.ghostCount) * i
+        local ox    = math.cos(angle) * StandoffDesync.spread
+        local oz    = math.sin(angle) * StandoffDesync.spread
+        table.insert(StandoffDesync._ghosts, Vector3.new(ox, 0, oz))
+    end
+end
+
+local function installStandoffHook()
+    if StandoffDesync._hooked then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    buildGhosts(hrp)
+    StandoffDesync._oldNI = StandoffDesync._mt.__newindex
+    setreadonly(StandoffDesync._mt, false)
+    StandoffDesync._mt.__newindex = newcclosure(function(self, key, value)
+        if StandoffDesync.active and self == hrp and key == "CFrame" then
+            StandoffDesync._realCF = value
+            local ghost = StandoffDesync._ghosts[StandoffDesync._idx]
+            if ghost then
+                local fakeCF = CFrame.new(
+                    value.X + ghost.X,
+                    value.Y + ghost.Y,
+                    value.Z + ghost.Z
+                ) * (value - value.Position)
+                return StandoffDesync._oldNI(self, key, fakeCF)
+            end
+        end
+        return StandoffDesync._oldNI(self, key, value)
+    end)
+    setreadonly(StandoffDesync._mt, true)
+    StandoffDesync._hooked = true
+end
+
+local function removeStandoffHook()
+    if not StandoffDesync._hooked or not StandoffDesync._oldNI then return end
+    setreadonly(StandoffDesync._mt, false)
+    StandoffDesync._mt.__newindex = StandoffDesync._oldNI
+    setreadonly(StandoffDesync._mt, true)
+    StandoffDesync._hooked = false
+    StandoffDesync._oldNI  = nil
+end
+
+RunService.Heartbeat:Connect(function(dt)
+    if not StandoffDesync.active then return end
+    StandoffDesync._timer = StandoffDesync._timer + dt
+    if StandoffDesync._timer >= StandoffDesync.switchRate then
+        StandoffDesync._timer = 0
+        StandoffDesync._idx   = (StandoffDesync._idx % StandoffDesync.ghostCount) + 1
+    end
+end)
+
+function StandoffDesync.enable()
+    installStandoffHook()
+    StandoffDesync.active = true
+    notify("standoff desync", "active")
+end
+
+function StandoffDesync.disable()
+    StandoffDesync.active = false
+    removeStandoffHook()
+    notify("standoff desync", "disabled")
+end
+
+-- ══════════════════════════════════════════════
+--          UNDERGROUND ANTI AIM
+-- hooks fighter controller + camera controller
+-- puts the player underground while weapon active
+-- camera controller restores pos each update
+-- ══════════════════════════════════════════════
+local UndergroundAA = {
+    active   = false,
+    _oldpos  = nil,
+    _camHook = nil,
+    _conn    = nil,
+}
+
+local _fighter_controller = nil
+local _local_fighter      = nil
+local _camera_controller  = nil
+local _old_cam_update     = nil
+local _ug_cam_hooked      = false
+
+local function instanceSafeRequire(obj)
+    local ok, result = pcall(require, obj)
+    if ok then return result end
+    return nil
+end
+
+local function setupUndergroundControllers()
+    if _fighter_controller then return true end
+
+    local ps = lp:FindFirstChild("PlayerScripts")
+    if not ps then return false end
+
+    local controllers = ps:FindFirstChild("Controllers")
+    if not controllers then return false end
+
+    local fc = controllers:FindFirstChild("FighterController")
+    local cc = controllers:FindFirstChild("CameraController")
+    if not fc or not cc then return false end
+
+    _fighter_controller = instanceSafeRequire(fc)
+    _camera_controller  = instanceSafeRequire(cc)
+
+    if not _fighter_controller or not _camera_controller then return false end
+
+    _local_fighter = _fighter_controller.LocalFighter
     return true
 end
 
-local function abFind()
-    local c = scr(); local fv = abEffFov(); local best = nil; local bd = fv
-    for _, p in ipairs(plr:GetPlayers()) do
-        if p == lp then continue end
-        if AB.team and sameTm(p) then continue end
-        local chr = p.Character; if not chr then continue end
-        local hm = chr:FindFirstChildOfClass("Humanoid")
-        if not hm or hm.Health <= 0 then continue end
-        local pt = bPart(chr, AB.part); if not pt then continue end
-        local sp, on = cam:WorldToViewportPoint(pt.Position); if not on then continue end
-        local d = (Vector2.new(sp.X, sp.Y) - c).Magnitude
-        if d < bd then
-            if AB.vis and not isVis(cam.CFrame.Position, pt) then continue end
-            bd = d; best = pt
-        end
-    end
-    return best
-end
+local function getFloorBelow(pos)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
 
-local function getPredictedPos(pt)
-    local now = tick(); local pos = pt.Position
-    if abPrevPos and (now - abPrevTick) > 0 then
-        local el = now - abPrevTick
-        local vel = (pos - abPrevPos) / el
-        pos = pos + vel * (0.08 * AB.speedAttack)
-    end
-    abPrevPos = pt.Position; abPrevTick = now
-    return pos
-end
-
-local function applySmartLock(tRot, cur, dt, screenDist, fovRadius)
-    local distFactor = AB.speed
-    if fovRadius > 0 then
-        local normalized = math.clamp(screenDist / fovRadius, 0, 1)
-        distFactor = AB.speed + (AB.speedScaleFov/100) * (1-normalized) * math.max(AB.speedAttack-AB.speed, 0)
-    end
-    local eff = math.clamp(distFactor, 0.01, 5)
-    local factor = math.clamp(eff * dt * 6, 0, 1)
-    if AB.lockMode == "Soft" or AB.lockMode == "Magnet" then
-        return Vector2.new(cur.X+(tRot.X-cur.X)*factor, cur.Y+angDiff(cur.Y,tRot.Y)*factor)
-    else
-        local distP=math.abs(tRot.X-cur.X); local distY=math.abs(angDiff(cur.Y,tRot.Y))
-        local dist=math.sqrt(distP^2+distY^2)
-        if abCurveStart==nil or dist>0.5 then abCurveStart=cur; abCurveProgress=0 end
-        abCurveEnd=tRot
-        local speed2=(AB.curvePct/100)*3*eff
-        abCurveProgress=math.clamp(abCurveProgress+speed2*dt,0,1)
-        local t=abCurveProgress; local curved=t*t*(3-2*t)
-        local nP=abCurveStart.X+(abCurveEnd.X-abCurveStart.X)*curved
-        local nY=abCurveStart.Y+angDiff(abCurveStart.Y,abCurveEnd.Y)*curved
-        if abCurveProgress>=1 then abCurveStart=nil; abCurveProgress=0 end
-        return Vector2.new(nP, nY)
-    end
-end
-
--- AI LEGIT LAYER
-local AI = {on=false, jitter=0.002, overshoot=0.12, breakChance=0.008, breakDur=0.25, varySmooth=true}
-local aiBreakTimer=0; local aiInBreak=false; local aiJitterX=0; local aiJitterY=0
-
-local function aiLegitProcess(newRot, cur, dt)
-    if not AI.on then return newRot end
-    if aiInBreak then
-        aiBreakTimer=aiBreakTimer-dt; if aiBreakTimer<=0 then aiInBreak=false end; return cur
-    end
-    if math.random() < AI.breakChance*dt*60 then
-        aiInBreak=true; aiBreakTimer=AI.breakDur+(math.random()-0.5)*0.1; return cur
-    end
-    aiJitterX=aiJitterX+(math.random()-0.5)*AI.jitter; aiJitterY=aiJitterY+(math.random()-0.5)*AI.jitter
-    aiJitterX=aiJitterX*0.85; aiJitterY=aiJitterY*0.85
-    local over=AI.overshoot; if AI.varySmooth then over=over*(0.7+math.random()*0.6) end
-    local nX=newRot.X+aiJitterX; local nY=newRot.Y+aiJitterY
-    if math.random()<0.1 then nX=nX+(math.random()-0.5)*over; nY=nY+(math.random()-0.5)*over end
-    return Vector2.new(nX, nY)
-end
-
--- ============================================================
--- SILENT AIM (fixed with hookmetamethod + mUtil:EncodeCFrame)
--- ============================================================
-local SA = {on=false, fov=200, drawFov=true, part="Head", team=false, vis=false}
-
-local function saFind()
-    local c=scr(); local bd=SA.fov; local best=nil
-    for _, p in ipairs(plr:GetPlayers()) do
-        if p==lp then continue end
-        if SA.team and sameTm(p) then continue end
-        local chr=p.Character; if not chr then continue end
-        local hm=chr:FindFirstChildOfClass("Humanoid")
-        if not hm or hm.Health<=0 then continue end
-        local pt=bPart(chr, SA.part); if not pt then continue end
-        local sp,on=cam:WorldToViewportPoint(pt.Position); if not on then continue end
-        local d=(Vector2.new(sp.X,sp.Y)-c).Magnitude
-        if d<bd then
-            if SA.vis and not isVis(cam.CFrame.Position,pt) then continue end
-            bd=d; best=pt
-        end
-    end
-    return best
-end
-
-local function setupSilentAim()
-    if not hookmetamethod then return end
-    local oldNC
-    oldNC = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        if (method=="FireServer") and self==rUseItem then
-            if SA.on and mUtil and mEnum then
-                local target = saFind()
-                if target then
-                    local args = {...}
-                    local oid = args[1]
-                    local org = cam.CFrame.Position
-                    local aimCF = CFrame.lookAt(org, target.Position)
-                    local sd = {}
-                    pcall(function()
-                        sd[utf8.char(1)] = {
-                            [utf8.char(0)] = mUtil:EncodeCFrame(aimCF),
-                            [utf8.char(1)] = mUtil:EncodeCFrame(target.CFrame),
-                            [utf8.char(2)] = target,
-                            [utf8.char(3)] = mUtil:EncodeCFrame(target.CFrame:ToObjectSpace(CFrame.new(target.Position))),
-                        }
-                    end)
-                    if oid and mEnum then
-                        pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("StartShooting"), sd, nil) end)
-                        return
-                    end
-                end
-            end
-        end
-        return oldNC(self, ...)
-    end))
-end
-pcall(setupSilentAim)
-
--- ============================================================
--- TRIGGERBOT (fixed — uses fireShot with mUtil)
--- ============================================================
-local TB = {on=false, fov=15, dist=200, delay=80, grace=150, team=false, vis=false, rand=true, minD=50, maxD=150}
-local tbConn=nil; local tbLastSeen=0; local tbLastFire=0
-
-local function tbGetDelay()
-    if TB.rand then return math.random(math.min(TB.minD,TB.maxD), math.max(TB.minD,TB.maxD)) end
-    return TB.delay
-end
-
-local function startTB()
-    if tbConn then tbConn:Disconnect() end
-    tbLastSeen=0; tbLastFire=0
-    tbConn = rs.Heartbeat:Connect(function()
-        if not TB.on or not lp.Character then return end
-        local lf=nil; pcall(function() if mFig then lf=mFig.LocalFighter end end)
-        if not lf then return end
-        local item=lf.EquippedItem; if not item then return end
-        local ammo=nil; pcall(function() ammo=item:Get("CurrentAmmo") end)
-        if ammo~=nil and ammo<=0 then return end
-        local now=tick(); local c=scr(); local found=false; local fp=nil
-        for _,p in ipairs(plr:GetPlayers()) do
-            if p==lp then continue end
-            if TB.team and sameTm(p) then continue end
-            local chr=p.Character; if not chr then continue end
-            local hm=chr:FindFirstChildOfClass("Humanoid")
-            if not hm or hm.Health<=0 then continue end
-            for _,n in ipairs({"Head","UpperTorso","LowerTorso","HumanoidRootPart"}) do
-                local pt=chr:FindFirstChild(n); if not pt then continue end
-                local dist=(cam.CFrame.Position-pt.Position).Magnitude
-                if dist>TB.dist then continue end
-                if TB.vis and not isVis(cam.CFrame.Position,pt) then continue end
-                local sp,on=cam:WorldToViewportPoint(pt.Position)
-                if not on or sp.Z<=0 then continue end
-                local sd2=(Vector2.new(sp.X,sp.Y)-c).Magnitude
-                if sd2<=TB.fov then found=true; fp=pt; tbLastSeen=now; break end
-            end
-            if found then break end
-        end
-        local grace=(now-tbLastSeen)*1000<=TB.grace
-        if not found and not grace then return end
-        if (now-tbLastFire)*1000<tbGetDelay() then return end
-        tbLastFire=now; if fp then fireShot(item,fp) end
-    end)
-end
-
--- ============================================================
--- RAGEBOT (Oynx engine — proper rgFire + priority targeting)
--- ============================================================
-local RG = {on=false, dist=999, team=false, vis=false, part="Head", fov=0, priority="Closest", ffa=false}
-local rgConn=nil; local rgCD=0; local rgRunning=false
-
-local rgRp = RaycastParams.new(); rgRp.FilterType = Enum.RaycastFilterType.Exclude
-
-local function rgValid(p)
-    if p==lp then return false end
-    if not RG.ffa and RG.team and sameTm(p) then return false end
-    local chr=p.Character; if not chr then return false end
-    local hm=chr:FindFirstChildOfClass("Humanoid")
-    return hm and hm.Health>0
-end
-
-local function rgInFov(pt)
-    if RG.fov<=0 then return true end
-    return inFov(pt, RG.fov)
-end
-
-local function rgFindTarget()
-    local myH=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    if not myH then return nil,nil,nil end
-    local candidates={}
-    for _,p in ipairs(plr:GetPlayers()) do
-        if not rgValid(p) then continue end
-        local chr=p.Character; local pt=bPart(chr, RG.part); if not pt then continue end
-        if not rgInFov(pt) then continue end
-        local dist=(myH.Position-pt.Position).Magnitude; if dist>RG.dist then continue end
-        if RG.vis then
-            rgRp.FilterDescendantsInstances={lp.Character, chr}
-            local dir=pt.Position-cam.CFrame.Position
-            local h=ws:Raycast(cam.CFrame.Position, dir, rgRp)
-            if h and not h.Instance:IsDescendantOf(chr) then continue end
-        end
-        local hm=chr:FindFirstChildOfClass("Humanoid"); local hp=hm and hm.Health or 0
-        table.insert(candidates, {player=p, char=chr, part=pt, dist=dist, hp=hp})
-    end
-    if #candidates==0 then return nil,nil,nil end
-    if     RG.priority=="LowHP"   then table.sort(candidates, function(a,b) return a.hp  <b.hp   end)
-    elseif RG.priority=="HighHP"  then table.sort(candidates, function(a,b) return a.hp  >b.hp   end)
-    elseif RG.priority=="Closest" then table.sort(candidates, function(a,b) return a.dist<b.dist end)
-    elseif RG.priority=="Random"  then
-        for i=#candidates,2,-1 do local j=math.random(i); candidates[i],candidates[j]=candidates[j],candidates[i] end
-    end
-    local best=candidates[1]; return best.player, best.char, best.part
-end
-
-local function rgFire(oid, bp)
-    if not mUtil or not mEnum or not rUseItem then return end
-    local myH=lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-    if not myH then return end
-    local org=myH.Position+Vector3.new(0,1.5,0)
-    local aimCF=CFrame.lookAt(org, bp.Position)
-    local sd={}
-    pcall(function()
-        sd[utf8.char(1)]={
-            [utf8.char(0)]=mUtil:EncodeCFrame(aimCF),
-            [utf8.char(1)]=mUtil:EncodeCFrame(bp.CFrame),
-            [utf8.char(2)]=bp,
-            [utf8.char(3)]=mUtil:EncodeCFrame(bp.CFrame:ToObjectSpace(CFrame.new(bp.Position))),
+    if _local_fighter
+        and _local_fighter.Entity
+        and _local_fighter.Entity.RootPart
+    then
+        params.FilterDescendantsInstances = {
+            _local_fighter.Entity.RootPart.Parent
         }
-    end)
-    spawnTracer(org, bp.Position)
-    pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("StartShooting"), sd, nil) end)
-    task.delay(0.07, function()
-        pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("StopShooting"), {}, nil) end)
-    end)
-end
-
--- Teleport Desync
-local TP={enabled=false, target="Head", autoShoot=true}
-local tpRunning=false
-
-local function doTeleport(targetChar, oid, targetPart)
-    if tpRunning then return end
-    if not ch or not ch:FindFirstChild("HumanoidRootPart") then return end
-    local myHRP=ch.HumanoidRootPart; local savedCF=myHRP.CFrame
-    local targetHRP2=targetChar:FindFirstChild("HumanoidRootPart")
-    local destPos=(targetHRP2 and targetHRP2.Position or savedCF.Position)+Vector3.new(0,3,0)
-    tpRunning=true
-    pcall(function() myHRP.CFrame=CFrame.new(destPos) end)
-    task.wait(0.05)
-    if TP.autoShoot and oid and targetPart and targetPart.Parent then
-        rgFire(oid, targetPart); task.wait(0.08)
     end
-    pcall(function() myHRP.CFrame=savedCF end)
-    tpRunning=false
-end
 
-local function startRG()
-    if rgConn then rgConn:Disconnect() end; rgRunning=false
-    rgConn=rs.Heartbeat:Connect(function(dt)
-        if not RG.on or not lp.Character then return end
-        if not mUtil or not mEnum or not rUseItem then return end
-        if rgRunning then return end
-        local lf=nil; pcall(function() if mFig then lf=mFig.LocalFighter end end)
-        if not lf then return end
-        local item=lf.EquippedItem; if not item then return end
-        local oid=nil; pcall(function() oid=item:Get("ObjectID") end); if not oid then return end
-        rgCD=rgCD-dt
-        local ammo=nil; pcall(function() ammo=item:Get("CurrentAmmo") end)
-        if ammo~=nil and ammo<=0 and rgCD<=0 then
-            pcall(function() rUseItem:FireServer(oid, mEnum:ToEnum("Reload"), {}, nil) end)
-            rgCD=2.0; return
-        end
-        local _,bc,bp=rgFindTarget(); if not bc or not bp then return end
-        if TP.enabled then
-            rgRunning=true
-            task.spawn(function() doTeleport(bc, oid, bp); rgRunning=false end)
-        else
-            rgFire(oid, bp)
-        end
-    end)
-end
-
--- ============================================================
--- RIOT SHIELD GODMODE
--- ============================================================
-local RIOT={enabled=false, blockBullets=true, blockProjectiles=true, autoFace=true}
-local PROJECTILE_NAMES={"Bow","Daggers","Slingshot","Paintball Gun"}
-local riotConn=nil
-
-local function isProjectileWeapon(name)
-    if not name then return false end
-    for _,wn in ipairs(PROJECTILE_NAMES) do
-        if name:lower():find(wn:lower()) then return true end
+    local result = workspace:Raycast(pos, Vector3.new(0, -500, 0), params)
+    if result then
+        return CFrame.new(
+            Vector3.new(pos.X, result.Position.Y - 2, pos.Z)
+        )
     end
-    return false
+    return nil
 end
 
-local function setupRiotShield()
-    if riotConn then riotConn:Disconnect() end
-    riotConn=rs.Heartbeat:Connect(function()
-        if not RIOT.enabled then return end
-        -- Force shield to stay unbroken via FighterController item list
-        pcall(function()
-            if not mFig then return end
-            local fc=mFig
-            -- Patch LocalFighter items
-            if fc.LocalFighter and fc.LocalFighter.Items then
-                for _,it in pairs(fc.LocalFighter.Items) do
-                    if it and rawget(it,"_is_broken")~=nil then
-                        rawset(it,"_is_broken",false)
-                        -- keep idle anim normal
-                        if it.ViewModel then
-                            pcall(function() it.ViewModel:OverrideRootPartOffset(nil) end)
-                            pcall(function() it.ViewModel:ChangeIdleAnimation("Idle") end)
-                        end
-                    end
-                end
-            end
-        end)
-        -- Auto-face nearest enemy (priority: projectile users)
-        if RIOT.autoFace and ch and hrp then
-            local nearest, nearDist=nil, math.huge
-            for _,p in ipairs(plr:GetPlayers()) do
-                if p==lp then continue end
-                local pc=p.Character; if not pc then continue end
-                local pr=pc:FindFirstChild("HumanoidRootPart"); if not pr then continue end
-                local d=(hrp.Position-pr.Position).Magnitude
-                -- Prioritise projectile weapons
-                local enemyLf=nil
-                pcall(function() if mFig then enemyLf=mFig:GetFighter(p) end end)
-                local isProj=false
-                if enemyLf and enemyLf.EquippedItem then
-                    local eName=""
-                    pcall(function() eName=tostring(enemyLf.EquippedItem:Get("ObjectID") or "") end)
-                    isProj=isProjectileWeapon(eName)
-                end
-                if isProj and RIOT.blockProjectiles then
-                    if d<nearDist then nearDist=d; nearest=pr end
-                elseif RIOT.blockBullets and d<nearDist then
-                    nearDist=d; nearest=pr
-                end
-            end
-            if nearest then
-                local dir=(nearest.Position-hrp.Position)*Vector3.new(1,0,1)
-                if dir.Magnitude>0.1 then
-                    pcall(function() hrp.CFrame=CFrame.new(hrp.Position, hrp.Position+dir.Unit) end)
-                end
-            end
+local function installCamHook()
+    if _ug_cam_hooked or not _camera_controller then return end
+    _old_cam_update = _camera_controller.Update
+    _camera_controller.Update = function(...)
+        local args = {...}
+        if UndergroundAA.active
+            and _local_fighter
+            and _local_fighter.Entity
+            and _local_fighter.Entity.RootPart
+            and UndergroundAA._oldpos
+        then
+            _local_fighter.Entity.RootPart.CFrame = UndergroundAA._oldpos
         end
-    end)
-end
-
-local function teardownRiotShield()
-    RIOT.enabled=false
-    if riotConn then riotConn:Disconnect(); riotConn=nil end
-end
-
--- ============================================================
--- ANTI-AIM (from Luau.txt — full pitch/yaw/underground system)
--- ============================================================
-local AA={enabled=false, pitch="Off", yawBase="Local", yaw="Off", yawAngle=0, underground=false}
-local function betterRandom(mi,ma,dmi,dma)
-    local val=math.random(mi,ma); repeat val=math.random(mi,ma) until val<dmi or val>dma; return val
-end
-local aaClientCF=nil; local aaClientLV=nil; local aaClientAV=nil
-local aaSpinAngle=0; local aaStutterOn=false
-
-local function computeAACFrame(dt)
-    if not ch then return nil end
-    local myHRP=ch:FindFirstChild("HumanoidRootPart"); if not myHRP then return nil end
-    local base=aaClientCF or myHRP.CFrame; local pos=base.Position
-    if AA.underground then pos=pos-Vector3.new(0,5,0) end
-    local pitchRad=0
-    if AA.pitch=="Up" then pitchRad=math.rad(-89)
-    elseif AA.pitch=="Down" then pitchRad=math.rad(89)
-    elseif AA.pitch=="Glitch" then pitchRad=math.rad(betterRandom(-89,89,-10,10))
-    elseif AA.pitch=="Random" then pitchRad=math.rad(math.random(-89,89)) end
-    local baseYaw=0
-    if AA.yawBase=="Local" then
-        local _,ry,_=base:ToEulerAnglesYXZ(); baseYaw=ry
-    elseif AA.yawBase=="AtTargets" then
-        local myPos=base.Position; local closest=nil; local cd=math.huge
-        for _,p in ipairs(plr:GetPlayers()) do
-            if p==lp then continue end
-            local ec=p.Character; if not ec then continue end
-            local eh=ec:FindFirstChild("HumanoidRootPart"); if not eh then continue end
-            local d=(myPos-eh.Position).Magnitude; if d<cd then cd=d; closest=eh end
-        end
-        if closest then
-            local dir=(closest.Position-myPos)*Vector3.new(1,0,1)
-            if dir.Magnitude>0.01 then baseYaw=math.atan2(-dir.X,-dir.Z) end
-        else local _,ry,_=base:ToEulerAnglesYXZ(); baseYaw=ry end
+        return _old_cam_update(table.unpack(args))
     end
-    local yawOffset=math.rad(AA.yawAngle)
-    if AA.yaw=="Backward" then yawOffset=yawOffset+math.rad(180)
-    elseif AA.yaw=="Spin" then aaSpinAngle=aaSpinAngle+dt*720; yawOffset=yawOffset+math.rad(aaSpinAngle)
-    elseif AA.yaw=="GlitchSpin" then aaSpinAngle=aaSpinAngle+dt*1440; yawOffset=yawOffset+math.rad(aaSpinAngle)+math.rad(betterRandom(-180,180,-10,10))
-    elseif AA.yaw=="StutterSpin" then
-        aaStutterOn=not aaStutterOn
-        if aaStutterOn then aaSpinAngle=aaSpinAngle+dt*720 else aaSpinAngle=aaSpinAngle-dt*360 end
-        yawOffset=yawOffset+math.rad(aaSpinAngle)
+    _ug_cam_hooked = true
+end
+
+local function removeCamHook()
+    if not _ug_cam_hooked or not _camera_controller then return end
+    _camera_controller.Update = _old_cam_update
+    _old_cam_update  = nil
+    _ug_cam_hooked   = false
+end
+
+-- heartbeat driver
+RunService.Heartbeat:Connect(function()
+    if getgenv().InstanceConfigLoading then return end
+    if not UndergroundAA.active then
+        UndergroundAA._oldpos = nil
+        return
     end
-    return CFrame.new(pos)*CFrame.fromEulerAnglesYXZ(pitchRad, baseYaw+yawOffset, 0)
-end
 
-local aaHeartConn=nil; local aaRenderConn=nil
-local function stopAntiAim()
-    AA.enabled=false
-    if aaHeartConn  then aaHeartConn:Disconnect();  aaHeartConn=nil end
-    if aaRenderConn then aaRenderConn:Disconnect(); aaRenderConn=nil end
-    aaClientCF=nil; aaClientLV=nil; aaClientAV=nil; aaSpinAngle=0; aaStutterOn=false
-end
-local function startAntiAim()
-    stopAntiAim(); AA.enabled=true; aaSpinAngle=0
-    aaHeartConn=rs.Heartbeat:Connect(function(dt)
-        if not AA.enabled then stopAntiAim(); return end
-        local myHRP=ch and ch:FindFirstChild("HumanoidRootPart"); if not myHRP then return end
-        aaClientCF=myHRP.CFrame; aaClientLV=myHRP.AssemblyLinearVelocity; aaClientAV=myHRP.AssemblyAngularVelocity
-        local desynced=computeAACFrame(dt); if not desynced then return end
-        pcall(function()
-            myHRP.CFrame=desynced
-            if AA.pitch=="Glitch" or AA.yaw=="GlitchSpin" then
-                myHRP.CFrame=CFrame.new(betterRandom(-2147483646,2147483646,-1147483646,1147483646),betterRandom(-2147483646,2147483646,-1147483646,1147483646),betterRandom(-2147483646,2147483646,-1147483646,1147483646))*CFrame.Angles(math.rad(math.pi),math.rad(math.pi),math.rad(math.pi))
-                myHRP.AssemblyLinearVelocity=Vector3.new(betterRandom(-2147483646,2147483646,-1147483646,1147483646),betterRandom(-2147483646,2147483646,-1147483646,1147483646),betterRandom(-2147483646,2147483646,-1147483646,1147483646))
-            end
-        end)
-    end)
-    rs:BindToRenderStep("AA_Sync",Enum.RenderPriority.First.Value,function()
-        if not AA.enabled then return end
-        local myHRP=ch and ch:FindFirstChild("HumanoidRootPart"); if not myHRP then return end
-        if aaClientCF then
-            pcall(function()
-                myHRP.CFrame=aaClientCF
-                myHRP.AssemblyLinearVelocity=aaClientLV or Vector3.zero
-                myHRP.AssemblyAngularVelocity=aaClientAV or Vector3.zero
-            end)
-        end
-    end)
-end
-
--- ============================================================
--- ESP
--- ============================================================
-local espBoxes={}
-local function updateESP()
-    for _,p in ipairs(plr:GetPlayers()) do
-        if p==lp then continue end
-        local chr=p.Character; local hm=chr and chr:FindFirstChildOfClass("Humanoid")
-        if not chr or not hm or hm.Health<=0 then
-            if espBoxes[p] then espBoxes[p]:Destroy(); espBoxes[p]=nil end; continue
-        end
-        if VIS.esp then
-            if not espBoxes[p] then
-                local b=Instance.new("SelectionBox")
-                b.Color3=Color3.fromRGB(255,50,50); b.LineThickness=0.05
-                b.SurfaceTransparency=1; b.Adornee=chr; b.Parent=ws
-                espBoxes[p]=b
-            end
-        else
-            if espBoxes[p] then espBoxes[p]:Destroy(); espBoxes[p]=nil end
-        end
+    -- lazy controller setup
+    if not _fighter_controller then
+        if not setupUndergroundControllers() then return end
+        installCamHook()
     end
-end
 
--- UTILITY ESP
-local utilESPObjects={}; local utilESPEnabled=false
-local utilKeywords={"grenade","flashbang","smoke","molotov","throwable","utility","mine","satchel","snowball"}
-local function updateUtilESP()
-    if not utilESPEnabled then return end
-    for i=#utilESPObjects,1,-1 do
-        local obj=utilESPObjects[i]
-        if not obj.part or not obj.part.Parent then
-            pcall(function() obj.label:Remove() end); pcall(function() obj.dist:Remove() end)
-            table.remove(utilESPObjects, i)
-        end
+    if not _local_fighter
+        or not _local_fighter.Entity
+        or not _local_fighter.Entity.RootPart
+    then
+        UndergroundAA._oldpos = nil
+        return
     end
-    for _,part in pairs(ws:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("Model") then
-            local nm=part.Name:lower(); local isUtil=false
-            for _,kw in ipairs(utilKeywords) do if nm:find(kw) then isUtil=true; break end end
-            if isUtil then
-                local already=false
-                for _,ex in pairs(utilESPObjects) do if ex.part==part then already=true; break end end
-                if not already then
-                    local ld=Drawing.new("Text"); ld.Size=14; ld.Color=Color3.fromRGB(255,200,0); ld.Outline=true; ld.Text="["..part.Name.."]"
-                    local dd=Drawing.new("Text"); dd.Size=12; dd.Color=Color3.fromRGB(200,200,200); dd.Outline=true
-                    table.insert(utilESPObjects, {part=part, label=ld, dist=dd})
-                end
-            end
-        end
-    end
-    if hrp then
-        for _,obj in pairs(utilESPObjects) do
-            local pos3d
-            if obj.part:IsA("BasePart") then pos3d=obj.part.Position
-            elseif obj.part:IsA("Model") and obj.part.PrimaryPart then pos3d=obj.part.PrimaryPart.Position end
-            if pos3d then
-                local sp,on=cam:WorldToViewportPoint(pos3d)
-                obj.label.Visible=on; obj.dist.Visible=on
-                if on then
-                    obj.label.Position=Vector2.new(sp.X, sp.Y-20)
-                    obj.dist.Text=math.floor((pos3d-hrp.Position).Magnitude).."m"
-                    obj.dist.Position=Vector2.new(sp.X, sp.Y-6)
-                end
-            end
-        end
-    end
-end
 
--- ============================================================
--- UI WINDOW
--- ============================================================
-Library:Watermark("Rivals Suite | v3.0 | Axiom")
-local Window=Library:Window("Rivals Cheat Suite")
+    local root = _local_fighter.Entity.RootPart
 
-Window:Section("Combat")
-local AimbotTab  = Window:Tab("Aimbot",  "crosshair")
-local RagebotTab = Window:Tab("Ragebot", "zap")
-Window:Section("Game")
-local VisualsTab = Window:Tab("Visuals", "eye")
-local SkinsTab   = Window:Tab("Skins",   "shirt")
-local MiscTab    = Window:Tab("Misc",    "tool")
-Window:Section("Menu")
-local SettingsTab= Window:Tab("Settings","settings")
+    -- save real position for camera restore
+    UndergroundAA._oldpos = root.CFrame
 
-local AimbotPage  = AimbotTab:SubTab("Aimbot")
-local SilentPage  = AimbotTab:SubTab("Silent Aim")
-local AntiAimPage = AimbotTab:SubTab("Anti-Aim")
-local TriggerPage = AimbotTab:SubTab("Triggerbot")
-local RagebotPage = RagebotTab:SubTab("Ragebot")
-local TracerPage  = RagebotTab:SubTab("Tracers")
-local ESPPage     = VisualsTab:SubTab("Utility ESP")
-local PlayerESP   = VisualsTab:SubTab("Player ESP")
-local SkinPage    = SkinsTab:SubTab("Skin Changer")
-local CharmPage   = SkinsTab:SubTab("Charms")
-local RiotPage    = MiscTab:SubTab("Riot Shield")
-local InfoPage    = MiscTab:SubTab("Info")
-local ConfigPage  = SettingsTab:SubTab("Config")
-local ThemePage   = SettingsTab:SubTab("Theme")
-local UIPage      = SettingsTab:SubTab("UI")
-
-local ABL  = AimbotPage:Groupbox("Aimbot",         "Left", "crosshair","true")
-local ABR  = AimbotPage:Groupbox("Aim Options",    "Right")
-local SAL  = SilentPage:Groupbox("Silent Aim",     "Left", "eye-off")
-local AAL  = AntiAimPage:Groupbox("Anti-Aim",      "Left", "shield")
-local AAR  = AntiAimPage:Groupbox("AA Options",    "Right")
-local TBL  = TriggerPage:Groupbox("Triggerbot",    "Left", "zap")
-local TBR  = TriggerPage:Groupbox("TB Options",    "Right")
-local RGL  = RagebotPage:Groupbox("Ragebot",       "Left", "skull")
-local RGR  = RagebotPage:Groupbox("Rage Options",  "Right")
-local TRL  = TracerPage:Groupbox("Bullet Tracers", "Left", "move")
-local ESPL = ESPPage:Groupbox("Utility ESP",       "Left", "map-pin")
-local PESP = PlayerESP:Groupbox("Player ESP",      "Left", "users")
-local RIOTL= RiotPage:Groupbox("Riot Shield God",  "Left", "shield")
-local INFOL= InfoPage:Groupbox("Status",           "Left")
-local SKL  = SkinPage:Groupbox("Weapon Skin",      "Left", "package")
-local CHL  = CharmPage:Groupbox("Charm",           "Left", "star")
-local CFGL = ConfigPage:Groupbox("Configuration",  "Left")
-local THML = ThemePage:Groupbox("Theme Manager",   "Right")
-local UIL  = UIPage:Groupbox("UI Settings",        "Right")
-
--- AIMBOT UI
-ABL:AddToggle({Title="Enable Aimbot",Default=false,Flag="ABOn",Callback=function(v) AB.on=v end})
-ABL:AddDropdown({Title="Target Bone",Values={"Head","HumanoidRootPart","UpperTorso","LowerTorso","Body","Random"},Default="Head",Flag="ABPart",Callback=function(v) AB.part=v end})
-ABL:AddSlider({Title="FOV",Min=10,Max=800,Default=150,Rounding=0,Flag="ABFov",Callback=function(v) AB.fov=v end})
-ABL:AddSlider({Title="Speed",Min=1,Max=100,Default=10,Rounding=1,Flag="ABSpeed",Callback=function(v) AB.speed=v/10 end})
-ABL:AddSlider({Title="Attack Speed",Min=1,Max=100,Default=10,Rounding=1,Flag="ABSpeedAtk",Callback=function(v) AB.speedAttack=v/10 end})
-ABL:AddSlider({Title="React Time (ms)",Min=0,Max=500,Default=100,Rounding=0,Flag="ABReact",Callback=function(v) AB.reactTime=v end})
-ABL:AddSlider({Title="Max Lock Time (s)",Min=1,Max=15,Default=3,Rounding=1,Flag="ABMaxLock",Callback=function(v) AB.maxLock=v end})
-ABR:AddToggle({Title="Show FOV Circle",Default=true,Flag="ABDrawFov",Callback=function(v) AB.drawFov=v end})
-ABR:AddToggle({Title="Dynamic FOV",Default=false,Flag="ABDynFov",Callback=function(v) AB.dynFov=v end})
-ABR:AddToggle({Title="Wall Check",Default=false,Flag="ABVis",Callback=function(v) AB.vis=v end})
-ABR:AddToggle({Title="Team Check",Default=false,Flag="ABTeam",Callback=function(v) AB.team=v end})
-ABR:AddDropdown({Title="Lock Mode",Values={"Soft","Curve","Magnet"},Default="Soft",Flag="ABLockMode",Callback=function(v) AB.lockMode=v end})
-ABR:AddDropdown({Title="Easy Preset",Values={"Casual","Normal","Tryhard"},Default="Normal",Flag="ABPreset",Callback=function(v) applyEasyPreset(v) end})
-ABR:AddToggle({Title="AI Legit Layer",Default=false,Flag="AIOn",Callback=function(v) AI.on=v end})
-ABR:AddLabel(isMobile and "FOV Mode: Center Screen (Mobile)" or "FOV Mode: Mouse Position (PC)")
-
--- SILENT AIM UI
-SAL:AddToggle({Title="Enable Silent Aim",Default=false,Flag="SAOn",Risky=true,Callback=function(v) SA.on=v end})
-SAL:AddDropdown({Title="Target Bone",Values={"Head","HumanoidRootPart","UpperTorso","Body"},Default="Head",Flag="SAPart",Callback=function(v) SA.part=v end})
-SAL:AddSlider({Title="Silent FOV",Min=10,Max=800,Default=200,Rounding=0,Flag="SAFov",Callback=function(v) SA.fov=v end})
-SAL:AddToggle({Title="Show FOV Circle",Default=true,Flag="SADrawFov",Callback=function(v) SA.drawFov=v end})
-SAL:AddToggle({Title="Wall Check",Default=false,Flag="SAVis",Callback=function(v) SA.vis=v end})
-SAL:AddToggle({Title="Team Check",Default=false,Flag="SATeam",Callback=function(v) SA.team=v end})
-SAL:AddLabel("Hooks UseItem:FireServer via hookmetamethod")
-SAL:AddLabel("Encodes CFrame with mUtil:EncodeCFrame")
-SAL:AddLabel(isMobile and "Mode: Center Screen" or "Mode: Mouse FOV")
-
--- ANTI-AIM UI
-AAL:AddToggle({Title="Enable Anti-Aim",Default=false,Flag="AAOn",Callback=function(v) if v then startAntiAim() else stopAntiAim() end end})
-AAL:AddDropdown({Title="Pitch",Values={"Off","Up","Zero","Down","Glitch","Random"},Default="Off",Flag="AAPitch",Callback=function(v) AA.pitch=v end})
-AAL:AddDropdown({Title="Yaw Base",Values={"Local","AtTargets"},Default="Local",Flag="AAYawBase",Callback=function(v) AA.yawBase=v end})
-AAL:AddDropdown({Title="Yaw Mode",Values={"Off","Forward","Backward","Spin","GlitchSpin","StutterSpin"},Default="Off",Flag="AAYaw",Callback=function(v) AA.yaw=v end})
-AAR:AddSlider({Title="Yaw Angle",Min=0,Max=360,Default=0,Rounding=0,Suffix="°",Flag="AAYawAngle",Callback=function(v) AA.yawAngle=v end})
-AAR:AddToggle({Title="Underground Offset",Default=false,Flag="AAUnder",Callback=function(v) AA.underground=v end})
-AAR:AddLabel("Spin: 720°/s | GlitchSpin: random coords")
-AAR:AddLabel("Uses Heartbeat + RenderStepped resync")
-
--- TRIGGERBOT UI
-TBL:AddToggle({Title="Enable Triggerbot",Default=false,Flag="TBOn",Callback=function(v) TB.on=v; if v then startTB() else if tbConn then tbConn:Disconnect(); tbConn=nil end end end})
-TBL:AddSlider({Title="FOV",Min=1,Max=200,Default=15,Rounding=0,Flag="TBFov",Callback=function(v) TB.fov=v end})
-TBL:AddSlider({Title="Max Distance",Min=10,Max=999,Default=200,Rounding=0,Suffix=" studs",Flag="TBDist",Callback=function(v) TB.dist=v end})
-TBL:AddToggle({Title="Wall Check",Default=false,Flag="TBVis",Callback=function(v) TB.vis=v end})
-TBL:AddToggle({Title="Team Check",Default=false,Flag="TBTeam",Callback=function(v) TB.team=v end})
-TBR:AddToggle({Title="Random Delay",Default=true,Flag="TBRand",Callback=function(v) TB.rand=v end})
-TBR:AddSlider({Title="Min Delay (ms)",Min=0,Max=500,Default=50,Rounding=0,Flag="TBMinD",Callback=function(v) TB.minD=v end})
-TBR:AddSlider({Title="Max Delay (ms)",Min=0,Max=500,Default=150,Rounding=0,Flag="TBMaxD",Callback=function(v) TB.maxD=v end})
-TBR:AddSlider({Title="Grace Period (ms)",Min=0,Max=500,Default=150,Rounding=0,Flag="TBGrace",Callback=function(v) TB.grace=v end})
-TBR:AddLabel("Uses mUtil:EncodeCFrame — properly fixed")
-TBR:AddLabel(isMobile and "Mode: Center Screen" or "Mode: Mouse FOV")
-
--- RAGEBOT UI
-RGL:AddToggle({Title="Enable Ragebot",Default=false,Flag="RGOn",Risky=true,Callback=function(v) RG.on=v; if v then startRG() else if rgConn then rgConn:Disconnect(); rgConn=nil end end end})
-RGL:AddDropdown({Title="Target Bone",Values={"Head","HumanoidRootPart","UpperTorso","LowerTorso","Body","Random"},Default="Head",Flag="RGPart",Callback=function(v) RG.part=v end})
-RGL:AddDropdown({Title="Priority",Values={"Closest","LowHP","HighHP","Random"},Default="Closest",Flag="RGPriority",Callback=function(v) RG.priority=v end})
-RGL:AddSlider({Title="Max Distance",Min=10,Max=999,Default=999,Rounding=0,Suffix=" studs",Flag="RGDist",Callback=function(v) RG.dist=v end})
-RGL:AddSlider({Title="FOV (0=disabled)",Min=0,Max=800,Default=0,Rounding=0,Flag="RGFov",Callback=function(v) RG.fov=v end})
-RGR:AddToggle({Title="Teleport Desync",Default=false,Flag="TPEnabled",Callback=function(v) TP.enabled=v end})
-RGR:AddToggle({Title="Auto Shoot (Desync)",Default=true,Flag="TPAutoShoot",Callback=function(v) TP.autoShoot=v end})
-RGR:AddToggle({Title="Wall Check",Default=false,Flag="RGVis",Callback=function(v) RG.vis=v end})
-RGR:AddToggle({Title="Team Check",Default=false,Flag="RGTeam",Callback=function(v) RG.team=v end})
-RGR:AddToggle({Title="FFA Mode",Default=false,Flag="RGFFA",Description="Ignore all team checks",Callback=function(v) RG.ffa=v end})
-RGR:AddLabel("Oynx engine: rgFire with EncodeCFrame")
-RGR:AddLabel("Uses mEnum:ToEnum(StartShooting)")
-
--- TRACER UI (fixed)
-TRL:AddToggle({Title="Enable Tracers",Default=false,Flag="TROn",Callback=function(v) VIS.tracers=v; if not v then for _,t in ipairs(tracers) do pcall(function() t.line:Remove() end) end; tracers={} end end})
-TRL:AddSlider({Title="Thickness",Min=1,Max=5,Default=2,Rounding=1,Flag="TRThick",Callback=function(v) VIS.tracerThick=v end})
-TRL:AddSlider({Title="Duration (s)",Min=1,Max=30,Default=5,Rounding=1,Flag="TRDur",Callback=function(v) VIS.tracerDur=v*0.1 end})
-TRL:AddColorPicker({Title="Tracer Color",Default=Color3.fromRGB(255,50,50),Flag="TRColor",Callback=function(c) VIS.tracerColor=c end})
-TRL:AddLabel("FIXED: only fires on Ragebot/Triggerbot shots")
-TRL:AddLabel("NOT during normal gun use / render loop")
-
--- UTILITY ESP
-ESPL:AddToggle({Title="Enable Utility ESP",Default=false,Flag="UtilESPOn",Callback=function(v)
-    utilESPEnabled=v
-    if not v then for _,d in pairs(utilESPObjects) do pcall(function() d.label:Remove() end); pcall(function() d.dist:Remove() end) end; utilESPObjects={} end
-end})
-ESPL:AddLabel("Tracks: grenade, flashbang, smoke, molotov")
-ESPL:AddLabel("mine, satchel, snowball, throwable")
-
--- PLAYER ESP
-PESP:AddToggle({Title="Enable Player ESP",Default=false,Flag="ESPOn",Callback=function(v) VIS.esp=v end})
-PESP:AddLabel("SelectionBox outline on all enemies")
-
--- RIOT SHIELD UI
-RIOTL:AddToggle({Title="Enable Riot Shield God",Default=false,Flag="RiotOn",Risky=true,Callback=function(v)
-    RIOT.enabled=v; if v then setupRiotShield() else teardownRiotShield() end
-end})
-RIOTL:AddToggle({Title="Block Bullets",Default=true,Flag="RiotBullets",Callback=function(v) RIOT.blockBullets=v end})
-RIOTL:AddToggle({Title="Block Projectiles",Default=true,Flag="RiotProj",Description="Bow, Daggers, Slingshot, Paintball Gun",Callback=function(v) RIOT.blockProjectiles=v end})
-RIOTL:AddToggle({Title="Auto-Face Threats",Default=true,Flag="RiotFace",Callback=function(v) RIOT.autoFace=v end})
-RIOTL:AddSeparator()
-RIOTL:AddLabel("Forces _is_broken = false on shield item")
-RIOTL:AddLabel("Auto-rotates to face projectile users")
-RIOTL:AddLabel("Projectiles: Bow | Daggers | Slingshot | Paintball")
-
--- INFO
-INFOL:AddLabel("CamCtrl: "..(mCam and "✓ Loaded" or "⏳ Waiting"))
-INFOL:AddLabel("FighterCtrl: "..(mFig and "✓ Loaded" or "⏳ Waiting"))
-INFOL:AddLabel("Utility: "..(mUtil and "✓ Loaded" or "✗ Failed"))
-INFOL:AddLabel("EnumLib: "..(mEnum and "✓ Loaded" or "✗ Failed"))
-INFOL:AddLabel(isMobile and "Platform: Mobile — Center FOV active" or "Platform: PC — Mouse FOV active")
-INFOL:AddLabel("AC: MiscController weak table hook ✓")
-INFOL:AddButton({Title="Stop All",Callback=function()
-    AB.on=false; SA.on=false; TB.on=false; RG.on=false; RIOT.enabled=false
-    VIS.esp=false; VIS.tracers=false; stopAntiAim()
-    if tbConn then tbConn:Disconnect(); tbConn=nil end
-    if rgConn then rgConn:Disconnect(); rgConn=nil end
-    teardownRiotShield()
-    for _,t in ipairs(tracers) do pcall(function() t.line:Remove() end) end; tracers={}
-    for _,b in pairs(espBoxes) do b:Destroy() end; espBoxes={}
-    pcall(function() rs:UnbindFromRenderStep("AA_Sync") end)
-    Library:Notify("Stopped","All features off",3)
-end})
-
--- SKIN CHANGER
-local skinNames={"None"}; local skinMap={[1]=nil}
-if mCosm and mCosm.Cosmetics then
-    for id,data in pairs(mCosm.Cosmetics) do
-        if data.Type=="Wrap" or data.Type=="SkinWrap" or (type(id)=="string" and id:lower():find("wrap")) then
-            table.insert(skinNames, tostring(id)); skinMap[#skinNames]=id
-        end
-    end
-end
-if #skinNames==1 and mCosm and mCosm.Cosmetics then
-    for id,_ in pairs(mCosm.Cosmetics) do table.insert(skinNames, tostring(id)); skinMap[#skinNames]=id end
-end
-local selectedSkin=nil
-SKL:AddDropdown({Title="Select Skin / Wrap",Values=skinNames,Default="None",Flag="SelectedSkin",Callback=function(v) local idx=table.find(skinNames,v); selectedSkin=idx and skinMap[idx] or nil end})
-local R_EquipCosmetic=nil; pcall(function() R_EquipCosmetic=rep.Remotes.Data.EquipCosmetic end)
-SKL:AddButton({Title="Apply Skin",Callback=function()
-    if not R_EquipCosmetic then Library:Notify("Error","Remote not found",2); return end
-    if selectedSkin then R_EquipCosmetic:FireServer(selectedSkin); Library:Notify("Skin","Applied!",2)
-    else Library:Notify("Skin","No skin selected",2) end
-end})
-SKL:AddLabel("Pulls Wraps from CosmeticLibrary.Cosmetics")
-
-local charmNames={"None"}; local charmMap={[1]=nil}
-if mCosm and mCosm.Cosmetics then
-    for id,data in pairs(mCosm.Cosmetics) do
-        if data.Type=="Charm" or (type(id)=="string" and id:lower():find("charm")) then
-            table.insert(charmNames, tostring(id)); charmMap[#charmNames]=id
-        end
-    end
-end
-local selectedCharm=nil
-CHL:AddDropdown({Title="Select Charm",Values=charmNames,Default="None",Flag="SelectedCharm",Callback=function(v) local idx=table.find(charmNames,v); selectedCharm=idx and charmMap[idx] or nil end})
-CHL:AddButton({Title="Apply Charm",Callback=function()
-    if not R_EquipCosmetic then Library:Notify("Error","Remote not found",2); return end
-    if selectedCharm then R_EquipCosmetic:FireServer(selectedCharm); Library:Notify("Charm","Applied!",2)
-    else Library:Notify("Charm","None selected",2) end
-end})
-
--- CONFIG
-local Configs=Library:GetConfigs()
-CFGL:AddDropdown({Title="Select Config",Values=Configs,Default="default",Flag="SelectedConfig",Callback=function(v) end})
-CFGL:AddTextbox({Title="New Config Name",Placeholder="Type name...",Flag="NewConfigName",Callback=function(v) end})
-CFGL:AddButton({Title="Load",Callback=function() local n=Library.Flags["SelectedConfig"]; if n then Library:LoadConfig(n); Library:Notify("Config","Loaded: "..n,2) else Library:Notify("Error","Select one!",3) end end})
-CFGL:AddButton({Title="Save",Callback=function()
-    local n=Library.Flags["NewConfigName"]; if not n or n=="" then n=Library.Flags["SelectedConfig"] end
-    if n and n~="" then Library:SaveConfig(n); local nl=Library:GetConfigs(); if Library.Items["SelectedConfig"] then Library.Items["SelectedConfig"].Refresh(nl) end; Library:Notify("Config","Saved: "..n,2)
-    else Library:Notify("Error","Enter a name!",3) end
-end})
-CFGL:AddButton({Title="Delete",Callback=function()
-    local n=Library.Flags["SelectedConfig"]; if n and n~="" then Library:DeleteConfig(n); local nl=Library:GetConfigs(); if Library.Items["SelectedConfig"] then Library.Items["SelectedConfig"].Refresh(nl) end; Library.Flags["SelectedConfig"]=nil; Library:Notify("Config","Deleted",2)
-    else Library:Notify("Error","Select one!",3) end
-end})
-CFGL:AddButton({Title="Refresh List",Callback=function() local nl=Library:GetConfigs(); if Library.Items["SelectedConfig"] then Library.Items["SelectedConfig"].Refresh(nl) end; Library:Notify("Configs","Refreshed",2) end})
-
--- THEME
-if Library.ThemePresets then
-    local tl={}; for n,_ in pairs(Library.ThemePresets) do table.insert(tl,n) end; table.sort(tl)
-    THML:AddDropdown({Title="Preset Theme",Values=tl,Default="Default",Callback=function(v) if Library.SetTheme then Library:SetTheme(v) end end})
-    THML:AddSeparator()
-end
-THML:AddColorPicker({Title="Accent",Default=Library.Theme and Library.Theme.Accent or Color3.fromRGB(100,140,255),Flag="ThemeAccent",Callback=function(c) Library:UpdateTheme("Accent",c) end})
-THML:AddColorPicker({Title="Background",Default=Library.Theme and Library.Theme.Background or Color3.fromRGB(20,20,28),Flag="ThemeBG",Callback=function(c) Library:UpdateTheme("Background",c) end})
-THML:AddColorPicker({Title="Groupbox",Default=Library.Theme and Library.Theme.Groupbox or Color3.fromRGB(25,25,35),Flag="ThemeGroupbox",Callback=function(c) Library:UpdateTheme("Groupbox",c) end})
-THML:AddButton({Title="Reset Theme",Callback=function() if Library.SetTheme then Library:SetTheme("Default") end; Library:Notify("Theme","Reset",2) end})
-
--- UI SETTINGS
-UIL:AddToggle({Title="Show Watermark",Default=true,Flag="ShowWM",Callback=function(v) if Library.WatermarkSettings then Library.WatermarkSettings.Enabled=v end end})
-UIL:AddTextbox({Title="Watermark Text",Default="Rivals Suite v3",Placeholder="text...",Flag="WMText",Callback=function(v) if Library.WatermarkSettings then Library.WatermarkSettings.Text=v end end})
-UIL:AddButton({Title="Unload UI",Callback=function()
-    local cg=game:GetService("CoreGui")
-    pcall(function() cg:FindFirstChild("RedOnyx"):Destroy() end)
-    pcall(function() cg:FindFirstChild("Watermark"):Destroy() end)
-end})
-
--- ============================================================
--- MAIN RENDER LOOP
--- ============================================================
-rs.RenderStepped:Connect(function(dt)
-    cam=ws.CurrentCamera
-    local c=scr()
-
-    -- FOV circles
-    abCirc.Position=c; abCirc.Radius=abEffFov(); abCirc.Visible=AB.drawFov and AB.on
-    saCirc.Position=c; saCirc.Radius=SA.fov;     saCirc.Visible=SA.drawFov and SA.on
-    rgCirc.Position=c; rgCirc.Radius=RG.fov;     rgCirc.Visible=RG.on and RG.fov>0
-
-    updateTracers()
-    updateESP()
-    updateUtilESP()
-
-    -- AIMBOT engine (Luau.txt — mCam:ApplyRotationDelta)
-    if AB.on and mCam then
-        if abDoReact then
-            abReactT=abReactT-dt; if abReactT<=0 then abDoReact=false end
-        end
-        if not abDoReact then
-            if abTgt and not abTgtValid(abTgt) then
-                abTgt=nil; abLockT=0; abPrevPos=nil; abCurveStart=nil; abCurveProgress=0
-            end
-            if not abTgt then
-                abTgt=abFind()
-                if abTgt then abLockT=0; abDoReact=true; abReactT=AB.reactTime/1000; abPrevPos=nil; abCurveStart=nil; abCurveProgress=0 end
-            end
-            if abTgt then
-                abLockT=abLockT+dt
-                if abLockT>AB.maxLock then
-                    abTgt=nil; abLockT=0; abPrevPos=nil; abCurveStart=nil; abCurveProgress=0
-                elseif inFov(abTgt, abEffFov()) then
-                    pcall(function()
-                        local aimPos=getPredictedPos(abTgt)
-                        local cp=cam.CFrame.Position; local du=(aimPos-cp).Unit
-                        local tp2=math.asin(math.clamp(du.Y,-1,1)); local ty=math.atan2(-du.X,-du.Z)
-                        local tRot=Vector2.new(tp2,ty); local cur=mCam.Rotation
-                        local sp,_=cam:WorldToViewportPoint(aimPos)
-                        local screenDist=(Vector2.new(sp.X,sp.Y)-c).Magnitude
-                        local newRot=applySmartLock(tRot,cur,dt,screenDist,abEffFov())
-                        newRot=aiLegitProcess(newRot,cur,dt)
-                        mCam:ApplyRotationDelta(Vector2.new(newRot.X-cur.X, angDiff(cur.Y,newRot.Y)))
-                    end)
-                else
-                    abTgt=nil; abLockT=0; abPrevPos=nil; abCurveStart=nil; abCurveProgress=0
-                end
-            end
-        end
+    -- push underground
+    local floorCF = getFloorBelow(root.Position)
+    if floorCF then
+        root.CFrame = floorCF
     end
 end)
 
-Library:Notify("Rivals Suite v3","Axiom was here. AC bypass active.",5)
-print("[RivalsV3] Loaded. AC Bypass: MiscController weak table hook active.")
+function UndergroundAA.enable()
+    if not setupUndergroundControllers() then
+        notify("underground", "controllers not found — try in-game")
+        return
+    end
+    installCamHook()
+    UndergroundAA.active = true
+    notify("underground", "active")
+end
+
+function UndergroundAA.disable()
+    UndergroundAA.active  = false
+    UndergroundAA._oldpos = nil
+    removeCamHook()
+    notify("underground", "disabled")
+end
+
+-- ══════════════════════════════════════════════
+--               DODGE SYSTEM
+-- ══════════════════════════════════════════════
+local Dodge = {
+    active     = false,
+    power      = 60,
+    cooldown   = 0.8,
+    iframes    = 0.25,
+    _lastDodge = 0,
+    _inFrame   = false,
+}
+
+local function getDodgeDir()
+    local hrp = getHRP()
+    if not hrp then return Vector3.new(0, 0, -1) end
+    local camLook  = camera.CFrame.LookVector
+    local camRight = camera.CFrame.RightVector
+    local dir      = Vector3.new(0, 0, 0)
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+        dir = dir + Vector3.new(camLook.X, 0, camLook.Z)
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+        dir = dir - Vector3.new(camLook.X, 0, camLook.Z)
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        dir = dir - Vector3.new(camRight.X, 0, camRight.Z)
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+        dir = dir + Vector3.new(camRight.X, 0, camRight.Z)
+    end
+    if dir.Magnitude < 0.1 then
+        dir = Vector3.new(camLook.X, 0, camLook.Z)
+    end
+    return dir.Unit
+end
+
+local function executeDodge()
+    if not Dodge.active then return end
+    if (tick() - Dodge._lastDodge) < Dodge.cooldown then return end
+    local hrp = getHRP()
+    if not hrp then return end
+    Dodge._lastDodge = tick()
+    Dodge._inFrame   = true
+    local dir    = getDodgeDir()
+    local target = hrp.CFrame + (dir * Dodge.power)
+    local tween  = TweenService:Create(
+        hrp,
+        TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { CFrame = target }
+    )
+    tween:Play()
+    task.delay(Dodge.iframes, function()
+        Dodge._inFrame = false
+    end)
+    notify("dodge", "dash!")
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not Dodge.active then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        executeDodge()
+    end
+end)
+
+-- ══════════════════════════════════════════════
+--            UI — COMBAT TAB
+-- ══════════════════════════════════════════════
+
+-- void spam
+GBox_VoidSpam:AddToggle("VoidSpamToggle", {
+    Text     = "void spam",
+    Default  = false,
+    Tooltip  = "rapidly sends your position to a void offset then snaps back",
+    Callback = function(v)
+        if v then VoidSpam.start() else VoidSpam.stop() end
+    end
+})
+
+GBox_VoidSpam:AddSlider("VoidSpamSpeed", {
+    Text     = "flicker speed",
+    Default  = 0.05,
+    Min      = 0.01,
+    Max      = 0.3,
+    Rounding = 2,
+    Tooltip  = "lower = faster flickering",
+    Callback = function(v) VoidSpam.speed = v end
+})
+
+GBox_VoidSpam:AddDivider()
+GBox_VoidSpam:AddLabel("xyz void offset", true)
+
+GBox_VoidSpam:AddSlider("VoidOffsetX", {
+    Text     = "offset x",
+    Default  = 0,
+    Min      = -1000,
+    Max      = 1000,
+    Rounding = 0,
+    Tooltip  = "x axis offset for the void teleport",
+    Callback = function(v) VoidSpam.offsetX = v end
+})
+
+GBox_VoidSpam:AddSlider("VoidOffsetY", {
+    Text     = "offset y",
+    Default  = -500,
+    Min      = -2000,
+    Max      = -50,
+    Rounding = 0,
+    Tooltip  = "y axis offset — how deep the void goes",
+    Callback = function(v) VoidSpam.offsetY = v end
+})
+
+GBox_VoidSpam:AddSlider("VoidOffsetZ", {
+    Text     = "offset z",
+    Default  = 0,
+    Min      = -1000,
+    Max      = 1000,
+    Rounding = 0,
+    Tooltip  = "z axis offset for the void teleport",
+    Callback = function(v) VoidSpam.offsetZ = v end
+})
+
+GBox_VoidSpam:AddButton({
+    Text    = "force void once",
+    Func    = function()
+        local hrp = getHRP()
+        if hrp then
+            local saved = hrp.CFrame
+            hrp.CFrame  = CFrame.new(
+                hrp.Position.X + VoidSpam.offsetX,
+                hrp.Position.Y + VoidSpam.offsetY,
+                hrp.Position.Z + VoidSpam.offsetZ
+            )
+            task.delay(0.05, function()
+                if hrp and hrp.Parent then hrp.CFrame = saved end
+            end)
+            notify("void spam", "manual void fired")
+        end
+    end,
+    Tooltip = "fires a single void teleport right now"
+})
+
+-- desync
+GBox_Desync:AddToggle("DesyncToggle", {
+    Text     = "position desync",
+    Default  = false,
+    Tooltip  = "offsets server-replicated cframe so enemies shoot the wrong spot",
+    Callback = function(v)
+        if v then Desync.enable() else Desync.disable() end
+    end
+})
+
+GBox_Desync:AddSlider("DesyncIntensity", {
+    Text     = "intensity",
+    Default  = 8,
+    Min      = 1,
+    Max      = 30,
+    Rounding = 0,
+    Tooltip  = "how many studs the server sees you offset",
+    Callback = function(v) Desync.intensity = v end
+})
+
+GBox_Desync:AddSlider("DesyncSpeed", {
+    Text     = "flicker rate",
+    Default  = 0.03,
+    Min      = 0.01,
+    Max      = 0.2,
+    Rounding = 2,
+    Tooltip  = "how fast the desync offset changes",
+    Callback = function(v) Desync.speed = v end
+})
+
+-- standoff desync
+GBox_StandOff:AddToggle("StandoffToggle", {
+    Text     = "standoff desync",
+    Default  = false,
+    Tooltip  = "cycles ghost positions — best in 1v1 duels",
+    Callback = function(v)
+        if v then StandoffDesync.enable() else StandoffDesync.disable() end
+    end
+})
+
+GBox_StandOff:AddSlider("StandoffGhosts", {
+    Text     = "ghost count",
+    Default  = 3,
+    Min      = 2,
+    Max      = 8,
+    Rounding = 0,
+    Tooltip  = "number of fake positions cycled",
+    Callback = function(v) StandoffDesync.ghostCount = v end
+})
+
+GBox_StandOff:AddSlider("StandoffSpread", {
+    Text     = "ghost spread",
+    Default  = 6,
+    Min      = 1,
+    Max      = 20,
+    Rounding = 1,
+    Tooltip  = "stud distance between ghost positions",
+    Callback = function(v) StandoffDesync.spread = v end
+})
+
+GBox_StandOff:AddSlider("StandoffRate", {
+    Text     = "switch rate",
+    Default  = 0.04,
+    Min      = 0.01,
+    Max      = 0.2,
+    Rounding = 2,
+    Tooltip  = "how fast ghosts cycle",
+    Callback = function(v) StandoffDesync.switchRate = v end
+})
+
+GBox_StandOff:AddButton({
+    Text    = "rebuild ghosts",
+    Func    = function()
+        local hrp = getHRP()
+        if hrp then
+            buildGhosts(hrp)
+            notify("standoff", "ghost positions rebuilt")
+        end
+    end,
+    Tooltip = "rebuilds ghost offsets around your current position"
+})
+
+-- underground anti aim
+GBox_Underground:AddToggle("UndergroundToggle", {
+    Text     = "underground anti aim",
+    Default  = false,
+    Tooltip  = "pushes your hitbox underground using fighter controller — server sees wrong y position",
+    Callback = function(v)
+        if v then UndergroundAA.enable() else UndergroundAA.disable() end
+    end
+})
+
+GBox_Underground:AddLabel(
+    "equip a weapon before\nenabling underground",
+    true
+)
+
+-- ══════════════════════════════════════════════
+--            UI — MOVEMENT TAB
+-- ══════════════════════════════════════════════
+
+GBox_Dodge:AddToggle("DodgeToggle", {
+    Text     = "dodge system",
+    Default  = false,
+    Tooltip  = "press q to dash in your movement direction",
+    Callback = function(v)
+        Dodge.active = v
+        notify("dodge", v and "active — press q to dash" or "disabled")
+    end
+})
+
+GBox_Dodge:AddSlider("DodgePower", {
+    Text     = "dash power",
+    Default  = 60,
+    Min      = 10,
+    Max      = 150,
+    Rounding = 0,
+    Tooltip  = "how far you dash per q press",
+    Callback = function(v) Dodge.power = v end
+})
+
+GBox_Dodge:AddSlider("DodgeCooldown", {
+    Text     = "cooldown (s)",
+    Default  = 0.8,
+    Min      = 0.1,
+    Max      = 3,
+    Rounding = 1,
+    Tooltip  = "seconds between dashes",
+    Callback = function(v) Dodge.cooldown = v end
+})
+
+GBox_Dodge:AddSlider("DodgeIframes", {
+    Text     = "iframe duration (s)",
+    Default  = 0.25,
+    Min      = 0.05,
+    Max      = 1,
+    Rounding = 2,
+    Tooltip  = "how long position offset persists during dash",
+    Callback = function(v) Dodge.iframes = v end
+})
+
+GBox_Dodge:AddLabel("press [q] to dodge", true)
+
+-- ══════════════════════════════════════════════
+--              UI — BAIT TAB
+-- ══════════════════════════════════════════════
+
+GBox_Bait:AddDropdown("BaitMode", {
+    Values   = { "freeze", "custom", "orbit" },
+    Default  = 1,
+    Text     = "bait mode",
+    Tooltip  = "freeze = lock current pos | custom = set vector3 | orbit = circle a point",
+    Callback = function(v)
+        getgenv().BaitSystem.mode = v
+    end
+})
+
+GBox_Bait:AddButton({
+    Text    = "enable bait",
+    Func    = function()
+        getgenv().BaitSystem.enable(Options.BaitMode.Value)
+    end,
+    Tooltip = "activates bait in the selected mode"
+})
+
+GBox_Bait:AddButton({
+    Text    = "disable bait",
+    Func    = function()
+        getgenv().BaitSystem.disable()
+    end,
+    Tooltip = "deactivates the bait system"
+})
+
+GBox_Bait:AddButton({
+    Text    = "update freeze point",
+    Func    = function()
+        getgenv().BaitSystem.setFreeze()
+    end,
+    Tooltip = "updates the frozen position to your current location"
+})
+
+GBox_BaitOpts:AddToggle("BaitTimerToggle", {
+    Text     = "auto-disable timer",
+    Default  = false,
+    Tooltip  = "automatically disables bait after n seconds",
+    Callback = function(v)
+        getgenv().BaitSystem.setTimer(Options.BaitTimerDur.Value, v)
+    end
+})
+
+GBox_BaitOpts:AddSlider("BaitTimerDur", {
+    Text     = "timer duration (s)",
+    Default  = 5,
+    Min      = 1,
+    Max      = 30,
+    Rounding = 0,
+    Tooltip  = "seconds until bait auto-disables",
+    Callback = function(v)
+        getgenv().BaitSystem.setTimer(v, Toggles.BaitTimerToggle.Value)
+    end
+})
+
+GBox_BaitOpts:AddDivider()
+
+GBox_BaitOpts:AddToggle("GhostFlashToggle", {
+    Text     = "ghost flash",
+    Default  = false,
+    Tooltip  = "briefly shows real position to bait enemies into shooting",
+    Callback = function(v)
+        getgenv().BaitSystem.setGhostFlash(
+            v,
+            Options.FlashDur.Value,
+            Options.FlashCooldown.Value
+        )
+    end
+})
+
+GBox_BaitOpts:AddSlider("FlashDur", {
+    Text     = "flash duration (s)",
+    Default  = 0.12,
+    Min      = 0.05,
+    Max      = 0.5,
+    Rounding = 2,
+    Tooltip  = "how long real pos is visible during flash",
+    Callback = function(v)
+        getgenv().BaitSystem.setGhostFlash(
+            Toggles.GhostFlashToggle.Value,
+            v,
+            Options.FlashCooldown.Value
+        )
+    end
+})
+
+GBox_BaitOpts:AddSlider("FlashCooldown", {
+    Text     = "flash cooldown (s)",
+    Default  = 3,
+    Min      = 0.5,
+    Max      = 10,
+    Rounding = 1,
+    Tooltip  = "seconds between each flash",
+    Callback = function(v)
+        getgenv().BaitSystem.setGhostFlash(
+            Toggles.GhostFlashToggle.Value,
+            Options.FlashDur.Value,
+            v
+        )
+    end
+})
+
+GBox_BaitOpts:AddDivider()
+
+GBox_BaitOpts:AddSlider("OrbitRadius", {
+    Text     = "orbit radius",
+    Default  = 10,
+    Min      = 2,
+    Max      = 50,
+    Rounding = 0,
+    Tooltip  = "orbit mode — radius of the circle in studs",
+    Callback = function(v)
+        getgenv().BaitSystem.setOrbit(nil, v, nil)
+    end
+})
+
+GBox_BaitOpts:AddSlider("OrbitSpeed", {
+    Text     = "orbit speed",
+    Default  = 1.5,
+    Min      = 0.1,
+    Max      = 10,
+    Rounding = 1,
+    Tooltip  = "orbit mode — how fast the ghost circles",
+    Callback = function(v)
+        getgenv().BaitSystem.setOrbit(nil, nil, v)
+    end
+})
+
+-- ══════════════════════════════════════════════
+--              UI — SHIELD TAB
+-- ══════════════════════════════════════════════
+
+GBox_Shield:AddLabel("equip riot shield\nbefore enabling", true)
+GBox_Shield:AddDivider()
+
+GBox_Shield:AddToggle("ShieldGMToggle", {
+    Text     = "shield godmode",
+    Default  = false,
+    Tooltip  = "blocks absorbedHit ammo drain — infinite shield blocks",
+    Callback = function(v)
+        if v then getgenv().ShieldGM.enable() else getgenv().ShieldGM.disable() end
+    end
+})
+
+GBox_Shield:AddButton({
+    Text    = "re-hook shield",
+    Func    = function() getgenv().ShieldGM.rehook() end,
+    Tooltip = "re-scans gc for shield function — use after equipping shield"
+})
+
+GBox_ShieldOpts:AddSlider("ImpulseX", {
+    Text     = "impulse x",
+    Default  = 0,
+    Min      = -50,
+    Max      = 50,
+    Rounding = 0,
+    Callback = function(v)
+        getgenv().ShieldGM.setImpulse(
+            v, Options.ImpulseY.Value,
+            Options.ImpulseZ.Value, Options.ImpulseScale.Value
+        )
+    end
+})
+
+GBox_ShieldOpts:AddSlider("ImpulseY", {
+    Text     = "impulse y",
+    Default  = -20,
+    Min      = -100,
+    Max      = 50,
+    Rounding = 0,
+    Callback = function(v)
+        getgenv().ShieldGM.setImpulse(
+            Options.ImpulseX.Value, v,
+            Options.ImpulseZ.Value, Options.ImpulseScale.Value
+        )
+    end
+})
+
+GBox_ShieldOpts:AddSlider("ImpulseZ", {
+    Text     = "impulse z",
+    Default  = 0,
+    Min      = -50,
+    Max      = 50,
+    Rounding = 0,
+    Callback = function(v)
+        getgenv().ShieldGM.setImpulse(
+            Options.ImpulseX.Value, Options.ImpulseY.Value,
+            v, Options.ImpulseScale.Value
+        )
+    end
+})
+
+GBox_ShieldOpts:AddSlider("ImpulseScale", {
+    Text     = "impulse scale",
+    Default  = 1,
+    Min      = 0.1,
+    Max      = 5,
+    Rounding = 1,
+    Callback = function(v)
+        getgenv().ShieldGM.setImpulse(
+            Options.ImpulseX.Value, Options.ImpulseY.Value,
+            Options.ImpulseZ.Value, v
+        )
+    end
+})
+
+-- ══════════════════════════════════════════════
+--              UI — SETTINGS TAB
+-- ══════════════════════════════════════════════
+local MenuGroup = Tabs.settings:AddLeftGroupbox("menu")
+
+MenuGroup:AddToggle("KeybindMenuOpen", {
+    Default  = Library.KeybindFrame.Visible,
+    Text     = "open keybind menu",
+    Callback = function(v) Library.KeybindFrame.Visible = v end
+})
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+    Text     = "custom cursor",
+    Default  = false,
+    Callback = function(v) Library.ShowCustomCursor = v end
+})
+
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("menu bind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI    = true,
+    Text    = "menu keybind"
+})
+
+MenuGroup:AddButton("unload", function() Library:Unload() end)
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+-- ══════════════════════════════════════════════
+--               WATERMARK
+-- ══════════════════════════════════════════════
+Library:SetWatermarkVisibility(true)
+
+local _wFrameTimer   = tick()
+local _wFrameCounter = 0
+local _wFPS          = 60
+
+local _wmConn = RunService.RenderStepped:Connect(function()
+    _wFrameCounter += 1
+    if (tick() - _wFrameTimer) >= 1 then
+        _wFPS          = _wFrameCounter
+        _wFrameTimer   = tick()
+        _wFrameCounter = 0
+    end
+    local pingOk, ping = pcall(function()
+        return math.floor(
+            game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+        )
+    end)
+    if pingOk then
+        Library:SetWatermark(
+            ("sexhook | %d fps | %d ms"):format(math.floor(_wFPS), ping)
+        )
+    else
+        Library:SetWatermark(
+            ("sexhook | %d fps"):format(math.floor(_wFPS))
+        )
+    end
+end)
+
+-- ══════════════════════════════════════════════
+--              UNLOAD HANDLER
+-- ══════════════════════════════════════════════
+Library:OnUnload(function()
+    _wmConn:Disconnect()
+    VoidSpam.stop()
+    Desync.disable()
+    StandoffDesync.disable()
+    UndergroundAA.disable()
+    getgenv().BaitSystem.disable()
+    getgenv().ShieldGM.disable()
+    Dodge.active = false
+    print("[sexhook] unloaded cleanly")
+    Library.Unloaded = true
+end)
+
+-- ══════════════════════════════════════════════
+--          THEME & SAVE MANAGER
+-- ══════════════════════════════════════════════
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+ThemeManager:SetFolder("sexhook")
+SaveManager:SetFolder("sexhook/rivals")
+SaveManager:BuildConfigSection(Tabs.settings)
+ThemeManager:ApplyToTab(Tabs.settings)
+SaveManager:LoadAutoloadConfig()
+
+notify("sexhook", "loaded successfully")
